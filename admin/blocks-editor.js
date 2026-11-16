@@ -11,7 +11,7 @@
 
   var TYPES = {
     p: 'Paragraph', h2: 'Heading 2', h3: 'Heading 3', h4: 'Heading 4',
-    ul: 'Bulleted list', ol: 'Numbered list', quote: 'Quote', image: 'Image', html: 'HTML'
+    ul: 'Bulleted list', ol: 'Numbered list', quote: 'Quote', faq: 'Question and answer', image: 'Image', html: 'HTML'
   };
   var INLINE_OK = { STRONG: 1, B: 1, EM: 1, I: 1, A: 1, BR: 1, CODE: 1 };
 
@@ -71,6 +71,28 @@
       decorative: img.getAttribute('alt') === '', caption: caption || '' };
   }
 
+  // A <details><summary>question</summary>answer</details> entry, when the answer is paragraphs and simple lists.
+  function parseDetails(n) {
+    var summary = n.firstElementChild;
+    if (!summary || summary.tagName !== 'SUMMARY' || summary.attributes.length || !simpleInline(summary)) return null;
+    var answer = [];
+    var ok = true;
+    Array.prototype.forEach.call(n.childNodes, function (c) {
+      if (c === summary) return;
+      if (c.nodeType === 3) { if (c.nodeValue.trim() !== '') ok = false; return; }
+      if (c.nodeType !== 1) return;
+      if (c.tagName === 'P' && !c.attributes.length && simpleInline(c)) {
+        answer.push(inlineToMarks(c).trim());
+      } else if ((c.tagName === 'UL' || c.tagName === 'OL') && !c.attributes.length && !c.querySelector('ul, ol') &&
+          Array.prototype.every.call(c.children, function (li) { return li.tagName === 'LI' && !li.attributes.length && simpleInline(li); })) {
+        answer.push(Array.prototype.map.call(c.children, function (li, k) { return (c.tagName === 'UL' ? '- ' : (k + 1) + '. ') + inlineToMarks(li).trim(); }).join('\n'));
+      } else {
+        ok = false;
+      }
+    });
+    return ok ? { type: 'faq', question: inlineToMarks(summary).trim(), answer: answer.join('\n\n') } : null;
+  }
+
   function parse(html) {
     var doc = new DOMParser().parseFromString('<div id="r">' + html + '</div>', 'text/html');
     var root = doc.getElementById('r');
@@ -81,7 +103,7 @@
         return;
       }
       if (n.nodeType !== 1) return;
-      var tag = n.tagName, img;
+      var tag = n.tagName, img, faq;
       if ((tag === 'H2' || tag === 'H3' || tag === 'H4') && !n.attributes.length && simpleInline(n)) {
         blocks.push({ type: tag.toLowerCase(), text: inlineToMarks(n).trim() });
       } else if (tag === 'P' && !n.attributes.length && (img = onlyImage(n)) && img.attributes.length <= 4) {
@@ -103,6 +125,8 @@
           Array.prototype.every.call(n.children, function (c) { return c.tagName === 'P' || INLINE_OK[c.tagName]; })) {
         var paras = n.querySelectorAll('p');
         blocks.push({ type: 'quote', text: paras.length ? Array.prototype.map.call(paras, function (p) { return inlineToMarks(p).trim(); }).join('\n\n') : inlineToMarks(n).trim() });
+      } else if (tag === 'DETAILS' && !n.attributes.length && (faq = parseDetails(n))) {
+        blocks.push(faq);
       } else {
         blocks.push({ type: 'html', html: n.outerHTML });
       }
@@ -127,6 +151,17 @@
     return s.replace(/\n/g, '<br>');
   }
 
+  // Answer text to HTML: blank lines separate paragraphs; lines starting "- " make a bulleted list, "1. " a numbered one.
+  function answerToHtml(text) {
+    return text.split(/\n\s*\n/).map(function (chunk) {
+      var lines = chunk.split('\n').map(function (l) { return l.trim(); }).filter(Boolean);
+      if (!lines.length) return '';
+      if (lines.every(function (l) { return /^- /.test(l); })) return '<ul>' + lines.map(function (l) { return '<li>' + marksToHtml(l.slice(2).trim()) + '</li>'; }).join('') + '</ul>';
+      if (lines.every(function (l) { return /^\d+\. /.test(l); })) return '<ol>' + lines.map(function (l) { return '<li>' + marksToHtml(l.replace(/^\d+\. /, '').trim()) + '</li>'; }).join('') + '</ol>';
+      return '<p>' + marksToHtml(lines.join('\n')) + '</p>';
+    }).filter(Boolean).join('');
+  }
+
   function serialize() {
     return state.blocks.map(function (b) {
       switch (b.type) {
@@ -140,6 +175,9 @@
         case 'quote':
           var paras = b.text.split(/\n\s*\n/).filter(function (p) { return p.trim() !== ''; });
           return paras.length ? '<blockquote>' + paras.map(function (p) { return '<p>' + marksToHtml(p.trim()) + '</p>'; }).join('') + '</blockquote>' : '';
+        case 'faq':
+          if (b.question.trim() === '' && b.answer.trim() === '') return '';
+          return '<details>\n<summary>' + marksToHtml(b.question.trim()) + '</summary>\n' + answerToHtml(b.answer) + '\n</details>';
         case 'image':
           if (!b.src.trim()) return '';
           var img = '<img src="' + escapeHtml(b.src.trim()) + '" alt="' + (b.decorative ? '' : escapeHtml(b.alt.trim())) + '">';
@@ -247,8 +285,19 @@
     } else if (b.type === 'quote') {
       section.appendChild(textControl(i, b, 'Quote text (a blank line starts a new paragraph)', 5,
         function () { return b.text; }, function (v) { b.text = v; }));
-    } else if (b.type === 'image') {
-      section.appendChild(imageFields(i, b));
+    } else if (b.type === 'faq') {
+      var qId = fieldId(i, 'text');
+      var q = el('input', { type: 'text', id: qId });
+      q.value = b.question;
+      q.addEventListener('input', function () { b.question = q.value; sync(); });
+      section.appendChild(el('div', { class: 'field' }, [el('label', { for: qId, text: 'Question' }), q]));
+      var aId = fieldId(i, 'answer');
+      var a = el('textarea', { id: aId, rows: 6, 'aria-describedby': aId + '-hint' });
+      a.value = b.answer;
+      a.addEventListener('input', function () { b.answer = a.value; sync(); });
+      section.appendChild(el('div', { class: 'field' }, [el('label', { for: aId, text: 'Answer' }),
+        el('p', { class: 'hint', id: aId + '-hint', text: 'A blank line starts a new paragraph. Start lines with "- " for a bulleted list or "1. " for a numbered list.' }),
+        markButtons(a), a]));
     } else {
       var hid = fieldId(i, 'html');
       var hta = el('textarea', { id: hid, rows: 8, spellcheck: 'false', class: 'code' });
@@ -321,13 +370,15 @@
 
   function changeType(i, type) {
     var b = state.blocks[i], text = '';
-    if (b.text !== undefined) text = b.text;
+    if (b.type === 'faq') text = (b.question + '\n\n' + b.answer).trim();
+    else if (b.text !== undefined) text = b.text;
     else if (b.items) text = b.items.join('\n');
     else if (b.type === 'image') text = b.caption || '';
     else if (b.type === 'html') text = b.html.replace(/<[^>]+>/g, '').trim();
     var nb;
     if (type === 'ul' || type === 'ol') nb = { type: type, items: text.split('\n') };
     else if (type === 'image') nb = { type: 'image', src: '', alt: '', decorative: false, caption: '' };
+    else if (type === 'faq') nb = { type: 'faq', question: b.type === 'h2' || b.type === 'h3' || b.type === 'h4' ? text : '', answer: b.type === 'h2' || b.type === 'h3' || b.type === 'h4' ? '' : text };
     else if (type === 'html') nb = { type: 'html', html: b.type === 'html' ? b.html : serializeOne(b) };
     else nb = { type: type, text: text, lede: b.lede };
     state.blocks[i] = nb;
@@ -362,7 +413,7 @@
 
   function deleteBlock(i) {
     var b = state.blocks[i];
-    var hasContent = (b.text && b.text.trim()) || (b.items && b.items.join('').trim()) || (b.src && b.src.trim()) || (b.html && b.html.trim());
+    var hasContent = (b.text && b.text.trim()) || (b.items && b.items.join('').trim()) || (b.src && b.src.trim()) || (b.html && b.html.trim()) || (b.question && (b.question + b.answer).trim());
     if (hasContent && !window.confirm('Delete block ' + (i + 1) + ' (' + TYPES[b.type].toLowerCase() + ')? This can’t be undone.')) return;
     state.blocks.splice(i, 1);
     if (!state.blocks.length) state.blocks.push({ type: 'p', text: '' });
@@ -382,7 +433,7 @@
 
     var root = el('div', { class: 'blocks-editor', role: 'region', 'aria-label': 'Content blocks' });
     root.appendChild(el('p', { id: 'blocks-help', class: 'hint', html:
-      'Each block is a form field. Use the Block type list to make it a heading, list, quote or image, and the buttons under each block to add, move or delete it. ' +
+      'Each block is a form field. Use the Block type list to make it a heading, list, quote, question and answer, or image, and the buttons under each block to add, move or delete it. ' +
       'For emphasis, select words and press Bold, Italic or Link, or type the marks yourself: <code>**bold**</code>, <code>*italic*</code>, <code>[link text](https://example.com)</code>.' }));
     var top = el('button', { type: 'button', class: 'button button-small button-outline', text: 'Add a block at the top' });
     top.addEventListener('click', function () { insertBlock(0); });
