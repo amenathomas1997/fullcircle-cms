@@ -120,7 +120,9 @@ function stale_edit_message(array $existing): string
 /** The scripts every content editing screen loads: TinyMCE, the Blocks editor and the switch between them. */
 function editor_scripts(): string
 {
-    return '<script src="/admin/vendor/tinymce/tinymce.min.js"></script><script src="/admin/blocks-editor.js" defer></script><script src="/admin/editor.js" defer></script>';
+    // The ?v= changes when a script changes, so browsers never run a week-old cached copy.
+    $v = fn(string $f) => '/admin/' . $f . '?v=' . (@filemtime(ROOT . '/admin/' . $f) ?: 1);
+    return '<script src="/admin/vendor/tinymce/tinymce.min.js"></script><script src="' . $v('blocks-editor.js') . '" defer></script><script src="' . $v('editor.js') . '" defer></script>';
 }
 
 function csrf_field(): string
