@@ -117,6 +117,12 @@ function stale_edit_message(array $existing): string
         . 'Nothing was saved. Open it in a new tab to see their version first, or press Save again to replace it with yours.';
 }
 
+/** The scripts every content editing screen loads: TinyMCE, the Blocks editor and the switch between them. */
+function editor_scripts(): string
+{
+    return '<script src="/admin/vendor/tinymce/tinymce.min.js"></script><script src="/admin/blocks-editor.js" defer></script><script src="/admin/editor.js" defer></script>';
+}
+
 function csrf_field(): string
 {
     return '<input type="hidden" name="csrf" value="' . h($_SESSION['csrf']) . '">';

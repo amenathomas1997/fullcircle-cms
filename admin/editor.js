@@ -10,12 +10,17 @@
   var textarea = document.getElementById('post-body');
   if (!textarea) return;
 
-  var csrf = document.querySelector('meta[name="csrf-token"]').content;
-  var dark = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
   var form = textarea.form;
+  // The token comes from the page's meta tag, or from the form's own hidden field.
+  var csrfMeta = document.querySelector('meta[name="csrf-token"]');
+  var csrfInput = form && form.querySelector('input[name="csrf"]');
+  var csrf = csrfMeta ? csrfMeta.content : (csrfInput ? csrfInput.value : '');
+  var dark = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
   var modes = [['visual', 'Visual (what you see is what you get)'], ['blocks', 'Blocks (best with a screen reader)'], ['html', 'HTML']];
-  var mode = 'visual';
-  try { mode = localStorage.getItem('fc-editor') || 'visual'; } catch (e) { /* ignore */ }
+  // Posts and pages remember their editor separately; pages start in HTML, posts in Visual.
+  var storeKey = (form && form.dataset.editorKey) || 'fc-editor';
+  var mode = (form && form.dataset.editorDefault) || 'visual';
+  try { mode = localStorage.getItem(storeKey) || mode; } catch (e) { /* ignore */ }
   if (!window.tinymce && mode === 'visual') mode = 'blocks';
   if (!window.FCBlocks && mode === 'blocks') mode = 'html';
 
@@ -63,7 +68,7 @@
     textarea.hidden = false;
     mode = next;
     if (remember) {
-      try { localStorage.setItem('fc-editor', next); } catch (e) { /* ignore */ }
+      try { localStorage.setItem(storeKey, next); } catch (e) { /* ignore */ }
     }
     if (next === 'visual') initVisual();
     if (next === 'blocks') FCBlocks.init(textarea);

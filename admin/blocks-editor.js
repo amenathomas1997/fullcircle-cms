@@ -375,7 +375,9 @@
   function init(textarea) {
     state.textarea = textarea;
     state.form = textarea.form;
-    state.csrf = (document.querySelector('meta[name="csrf-token"]') || {}).content || '';
+    var meta = document.querySelector('meta[name="csrf-token"]');
+    var hidden = state.form && state.form.querySelector('input[name="csrf"]');
+    state.csrf = meta ? meta.content : (hidden ? hidden.value : '');
     state.blocks = parse(textarea.value);
 
     var root = el('div', { class: 'blocks-editor', role: 'region', 'aria-label': 'Content blocks' });

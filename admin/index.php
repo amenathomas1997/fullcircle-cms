@@ -284,7 +284,7 @@ function page_form(?array $values = null, array $errors = [], ?string $origSlug 
     $isNew = $existing === null;
     $isHome = $origSlug === 'home';
 
-    $body = '<form method="post" action="' . h(admin_url('page', $isNew ? [] : ['slug' => $origSlug])) . '" data-editor-form>'
+    $body = '<form method="post" action="' . h(admin_url('page', $isNew ? [] : ['slug' => $origSlug])) . '" data-editor-form data-editor-key="fc-editor-page" data-editor-default="html">'
         . csrf_field() . updated_field('pages', $isNew ? null : $origSlug)
         . text_field('title', 'Page title', (string) $v['title'], ['required' => true, 'error' => $errors['title'] ?? null,
             'hint' => 'Shown in the browser tab and, unless you turn it off below, as the main heading of the page.']);
@@ -297,8 +297,9 @@ function page_form(?array $values = null, array $errors = [], ?string $origSlug 
                 . 'For a Spanish page, start it with <code>es-</code>, for example <code>es-contacto</code>; it will appear at <code>/es/contacto/</code>.'
                 . ($isNew ? '' : ' If you change it, links to the old address will stop working.')]);
     }
-    $body .= textarea_field('body', 'Page HTML', (string) $v['body'], ['rows' => 28, 'code' => true, 'class' => 'field-wide',
-            'hint' => 'The HTML for the page content, between the menu and the footer. Use <code>&lt;h2&gt;</code> for section headings. '
+    $body .= textarea_field('body', 'Page content', (string) $v['body'], ['rows' => 28, 'code' => true, 'class' => 'field-wide', 'id' => 'post-body',
+            'hint' => 'Choose an editor above: HTML (the page as written), Blocks (each paragraph and heading is its own form field, best with a screen reader) or Visual. '
+                . 'In HTML, use <code>&lt;h2&gt;</code> for section headings. '
                 . 'Button links: <code>&lt;a class="button" href="…"&gt;</code>. Contact form: <code>[contact-form]</code>.'])
         . translation_field($v, $origSlug)
         . checkbox_field('hide_title', 'Don’t show the page title as a heading', !empty($v['hide_title']), [
@@ -324,7 +325,7 @@ function page_form(?array $values = null, array $errors = [], ?string $origSlug 
         }
         $body .= '</ul>';
     }
-    admin_screen($isNew ? 'Add a page' : 'Edit page: ' . h($existing['title']), $body, 'pages', ['errors' => $errors]);
+    admin_screen($isNew ? 'Add a page' : 'Edit page: ' . h($existing['title']), $body, 'pages', ['errors' => $errors, 'scripts' => editor_scripts()]);
 }
 
 /** Check a submitted address. Returns an error message or null. */
@@ -523,11 +524,10 @@ function post_form(?array $values = null, array $errors = [], ?string $origSlug 
             . '<li><a href="' . h(admin_url('delete', ['type' => 'posts', 'slug' => $origSlug])) . '">Delete this post</a></li></ul>';
     }
 
-    $editorScript = '<script src="/admin/vendor/tinymce/tinymce.min.js"></script><script src="/admin/blocks-editor.js" defer></script><script src="/admin/editor.js" defer></script>';
     admin_screen($isNew ? 'Write a blog post' : 'Edit post: ' . h($existing['title']), $body, 'posts', [
         'errors' => $errors,
         'head' => '<meta name="csrf-token" content="' . h($_SESSION['csrf']) . '">',
-        'scripts' => $editorScript,
+        'scripts' => editor_scripts(),
     ]);
 }
 

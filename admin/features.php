@@ -68,7 +68,7 @@ function resource_form(?array $values = null, array $errors = [], ?string $origS
     admin_screen($isNew ? 'Add a cheat sheet' : 'Edit cheat sheet: ' . h($existing['title']), $body, 'resources', [
         'errors' => $errors,
         'head' => '<meta name="csrf-token" content="' . h($_SESSION['csrf']) . '">',
-        'scripts' => '<script src="/admin/vendor/tinymce/tinymce.min.js"></script><script src="/admin/blocks-editor.js" defer></script><script src="/admin/editor.js" defer></script>',
+        'scripts' => editor_scripts(),
     ]);
 }
 
@@ -493,7 +493,7 @@ function collection_form(string $type, ?array $values = null, array $errors = []
     admin_screen(($isNew ? 'Add a ' : 'Edit ') . $c['singular'] . ($isNew ? '' : ': ' . h($existing['title'])), $body, $type, [
         'errors' => $errors,
         'head' => '<meta name="csrf-token" content="' . h($_SESSION['csrf']) . '">',
-        'scripts' => '<script src="/admin/vendor/tinymce/tinymce.min.js"></script><script src="/admin/blocks-editor.js" defer></script><script src="/admin/editor.js" defer></script>',
+        'scripts' => editor_scripts(),
     ]);
 }
 
