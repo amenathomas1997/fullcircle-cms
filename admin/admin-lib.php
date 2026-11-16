@@ -244,7 +244,16 @@ function admin_nav(): array
             unset($items[$feature]);
         }
     }
-    return $items;
+    // Screens added by features and this site's own code go before Settings.
+    $extra = [];
+    foreach (registered('admin') as $action => $screen) {
+        if ($screen['label'] !== null && ($screen['feature'] === null || feature_on($screen['feature']))) {
+            $extra[$action] = $screen['label'];
+        }
+    }
+    $settings = ['template' => $items['template'], 'settings' => $items['settings']];
+    unset($items['template'], $items['settings']);
+    return $items + $extra + $settings;
 }
 
 /** The names and one-line descriptions of the optional features, for Settings and setup. */
@@ -260,7 +269,7 @@ function feature_labels(): array
         'assistant' => ['Ask a question (Claude)', 'Visitors ask a question and get an answer written from your website. Needs an Anthropic API key.'],
         'bookings' => ['Microsoft Bookings next opening', 'The [next-opening] shortcode shows the next free time in a Bookings calendar.'],
         'spanish' => ['Spanish pages', 'A Spanish side of the site at /es/, with its own menu, footer, blog and language switch.'],
-    ];
+    ] + array_map(fn($f) => [$f[0], $f[1]], registered('features'));
 }
 
 /** A time zone drop-down grouped by region. */

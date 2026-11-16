@@ -21,7 +21,9 @@ $state = read_json(HEALTH_STATE) ?? [];
 if ((int) date('G') >= 6 && substr((string) ($state['last_daily'] ?? ''), 0, 10) !== date('Y-m-d')) {
     $warnings = daily_health_check();
     echo date('Y-m-d H:i'), ' daily health check: ', $warnings ? implode(' ', $warnings) : 'all good', "\n";
+    run_cron('daily');
 }
+run_cron('hourly');
 
 $report = read_json(LINK_REPORT);
 $due = !$report || strtotime((string) ($report['checked'] ?? '1970-01-01')) < strtotime('-30 days');

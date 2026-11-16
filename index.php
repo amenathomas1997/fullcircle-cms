@@ -175,6 +175,9 @@ if ($first === 'es') {
     }
     not_found();
 }
+// Features and this site's own code (lib/features/, site/) answer their addresses here.
+run_registered_routes($path, $parts);
+
 if (count($parts) === 0) {
     show_page('home', '/');
 }

@@ -38,6 +38,21 @@ if (isset($needsFeature[$action]) && !feature_on($needsFeature[$action])) {
     not_found_screen();
 }
 
+// Screens added by features and this site's own code.
+if (isset(registered('admin')[$action])) {
+    $screen = registered('admin')[$action];
+    if ($screen['feature'] !== null && !feature_on($screen['feature'])) {
+        not_found_screen();
+    }
+    try {
+        $screen['handler']($post);
+    } catch (RuntimeException $e) {
+        flash($e->getMessage(), 'error');
+        go(back_url());
+    }
+    exit;
+}
+
 try {
     match ($action) {
         '' => dashboard(),
@@ -222,6 +237,7 @@ function dashboard(): never
             . ' visitors and ' . number_format($week['views']) . ' page views in the last 7 days.</p></li>'
         . (feature_on('resources') ? '<li><h2><a href="' . h(admin_url('resources')) . '">Cheat sheets</a></h2><p>' . count(all_items('resources')) . ' cheat sheets, with Word and braille downloads.</p></li>' : '')
         . '<li><h2><a href="' . h(admin_url('menu')) . '">Menu</a></h2><p>Choose the links in the main menu.</p></li>'
+        . implode('', array_map(fn($card) => (string) $card(), registered('cards')))
         . '</ul>'
         . '<h2>Backups</h2>'
         . ($backup ? '<p>The website’s pages, posts, uploads and messages are backed up on the server every night. Latest backup: ' . h(format_time($backup['time'])) . ' (' . $backup['count'] . ' kept).</p>'
@@ -1282,6 +1298,7 @@ function settings_form(array $errors = [], array $values = []): never
         . assistant_settings_html()
         . bookings_settings_html($errors)
         . people_settings_html($errors)
+        . implode('', array_map(fn($s) => (string) $s['html']($errors), registered('settings')))
         . '<section aria-labelledby="password-heading"><h2 id="password-heading">Change password</h2>'
         . '<form method="post" action="' . h(admin_url('settings')) . '#password-heading">' . csrf_field() . '<input type="hidden" name="part" value="password">'
         . '<input type="text" name="username" value="admin" autocomplete="username" aria-label="Username" hidden>'
@@ -1296,6 +1313,12 @@ function settings_save(): never
 {
     $part = (string) ($_POST['part'] ?? '');
     $errors = [];
+
+    foreach (registered('settings') as $section) {
+        if ($section['part'] !== null && $section['part'] === $part && $section['save'] !== null) {
+            $section['save']();
+        }
+    }
 
     if ($part === 'site') {
         $s = settings();

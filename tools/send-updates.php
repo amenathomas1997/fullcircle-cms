@@ -7,6 +7,7 @@ if (PHP_SAPI !== 'cli') {
 }
 require __DIR__ . '/../lib/bootstrap.php';
 purge_pending_subscribers();
+run_cron('often');
 if (!glob(OUTBOX_DIR . '/*.json')) {
     exit(0);
 }

@@ -2,6 +2,7 @@
 // Loads everything the public site and the control panel share.
 declare(strict_types=1);
 
+require_once __DIR__ . '/registry.php';
 require_once __DIR__ . '/core.php';
 require_once __DIR__ . '/config.php';
 require_once __DIR__ . '/graph-mail.php';
@@ -21,3 +22,6 @@ require_once __DIR__ . '/subscribers.php';
 require_once __DIR__ . '/bookings.php';
 require_once __DIR__ . '/shortcodes.php';
 require_once __DIR__ . '/starter.php';
+
+// Optional features (lib/features/) and this site's own code (site/) register themselves last.
+load_features();

@@ -57,6 +57,11 @@ function render_shortcodes(string $body, string $path): string
     }
     // Shortcodes on a line of their own are often wrapped in <p> by editors; drop the wrapper.
     // Each shortcode is shown once: a repeat would duplicate form ids, which breaks labels for screen readers.
+    foreach (registered('shortcodes') as $code => $render) {
+        if (str_contains($body, $code)) {
+            $replace[$code] = (string) $render($path);
+        }
+    }
     foreach ($replace as $code => $html) {
         $body = str_replace("<p>$code</p>", $code, $body);
         $at = strpos($body, $code);

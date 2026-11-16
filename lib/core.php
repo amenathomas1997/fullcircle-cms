@@ -193,6 +193,7 @@ function save_item(string $type, string $slug, array $data, ?string $oldSlug = n
         $data['updated_by'] = $GLOBALS['current_editor'];
     }
     unset($data['slug']);
+    run_item_hooks('before_save', $type, $slug, $data);
     $file = item_file($type, $slug);
     if (is_file($file)) {
         save_revision($type, $slug, (string) file_get_contents($file));
@@ -213,6 +214,7 @@ function save_item(string $type, string $slug, array $data, ?string $oldSlug = n
         }
     }
     all_items($type, true);
+    run_item_hooks('after_save', $type, $slug, $data);
 }
 
 function delete_item(string $type, string $slug): void
@@ -224,6 +226,8 @@ function delete_item(string $type, string $slug): void
         unlink($file);
     }
     all_items($type, true);
+    $none = [];
+    run_item_hooks('after_delete', $type, $slug, $none);
 }
 
 /* ---------- Revisions ---------- */
@@ -402,7 +406,7 @@ function contact_html(?string $lang = null): string
 function feature_on(string $name): bool
 {
     $features = (array) (settings()['features'] ?? []);
-    return (bool) ($features[$name] ?? FEATURE_DEFAULTS[$name] ?? false);
+    return (bool) ($features[$name] ?? FEATURE_DEFAULTS[$name] ?? (registered('features')[$name][2] ?? false));
 }
 
 /** The site's host name, such as example.com, from the Site address setting. */
