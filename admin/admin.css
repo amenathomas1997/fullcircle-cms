@@ -144,3 +144,22 @@ td.actions > * + * { margin-left: .75rem; }
 .stat-number { font-size: 2.2rem; font-weight: 800; line-height: 1.1; margin: 0 0 .25rem !important; }
 table.stats td:last-child { width: 40%; }
 .bar { display: block; height: .9rem; min-width: 2px; background: var(--purple); border-radius: 3px; }
+
+/* Editor switch and the Blocks editor */
+.editor-switch { border: 2px solid var(--border); border-radius: 10px; padding: .75rem 1.25rem 1rem; margin: 0 0 1.25rem; }
+.editor-switch legend { font-weight: 700; padding: 0 .4rem; }
+.editor-switch .option { display: flex; align-items: center; gap: .6rem; padding: .25rem 0; }
+.editor-switch input { width: 1.4rem; height: 1.4rem; margin: 0; accent-color: var(--purple); }
+.editor-switch label { font-weight: 400; }
+.blocks-editor { margin: 0 0 1.5rem; }
+.block { border: 2px solid var(--border); border-left: 6px solid var(--purple); border-radius: 10px; padding: .75rem 1.25rem 1rem; margin: 1rem 0; }
+.block-title { font-size: 1.1rem; margin: 0 0 .75rem; }
+.block .field { margin-bottom: .9rem; }
+.block .field-inline { display: flex; flex-wrap: wrap; align-items: center; gap: .75rem; }
+.block .field-inline label { margin: 0; }
+.block textarea, .block input[type="text"] { width: 100%; }
+.block textarea.code { font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 1rem; }
+.block-marks, .block-actions { display: flex; flex-wrap: wrap; gap: .5rem; margin: .35rem 0 .5rem; }
+.button-small { padding: .35rem .8rem; font-size: .95rem; }
+.block .checkbox { display: flex; align-items: center; gap: .6rem; }
+.block .checkbox input { width: 1.4rem; height: 1.4rem; margin: 0; }

@@ -491,7 +491,7 @@ function post_form(?array $values = null, array $errors = [], ?string $origSlug 
         . text_field('title', 'Post title', (string) $v['title'], ['required' => true, 'error' => $errors['title'] ?? null])
         . textarea_field('body', 'Post content', (string) $v['body'], ['rows' => 24, 'class' => 'field-wide', 'id' => 'post-body',
             'error' => $errors['post-body'] ?? null,
-            'hint' => 'In the editor, press Alt and F10 to move to the toolbar, and Alt and 0 for all keyboard shortcuts. '
+            'hint' => 'Choose an editor above: Visual (Alt and F10 for its toolbar, Alt and 0 for shortcuts), Blocks (each paragraph and heading is its own form field, best with a screen reader) or HTML. '
                 . 'The post title is the main heading, so start sections with Heading 2.'])
         . radio_field('status', 'Status', ['published' => 'Published', 'draft' => 'Draft, only you can see it'], (string) ($v['status'] ?? 'draft'))
         . text_field('date', 'Publish date and time', substr((string) $v['date'], 0, 16), ['type' => 'datetime-local', 'required' => true, 'error' => $errors['date'] ?? null,
@@ -523,7 +523,7 @@ function post_form(?array $values = null, array $errors = [], ?string $origSlug 
             . '<li><a href="' . h(admin_url('delete', ['type' => 'posts', 'slug' => $origSlug])) . '">Delete this post</a></li></ul>';
     }
 
-    $editorScript = '<script src="/admin/vendor/tinymce/tinymce.min.js"></script><script src="/admin/editor.js" defer></script>';
+    $editorScript = '<script src="/admin/vendor/tinymce/tinymce.min.js"></script><script src="/admin/blocks-editor.js" defer></script><script src="/admin/editor.js" defer></script>';
     admin_screen($isNew ? 'Write a blog post' : 'Edit post: ' . h($existing['title']), $body, 'posts', [
         'errors' => $errors,
         'head' => '<meta name="csrf-token" content="' . h($_SESSION['csrf']) . '">',

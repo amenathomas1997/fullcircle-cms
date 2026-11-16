@@ -7,7 +7,7 @@ Full Circle CMS is a small website system written in plain PHP. There is no data
 Always on:
 
 - Pages, written as HTML in the control panel, with earlier versions kept (25 per item) and a preview before saving.
-- A blog with a visual editor (TinyMCE 7), drafts, scheduled posts, topics, reading time, related posts, an RSS feed, and an audio version per post with a podcast feed.
+- A blog with a choice of three editors: visual (TinyMCE 7), Blocks (every paragraph, heading, list and image is a labelled form field, built for JAWS, NVDA and VoiceOver) and plain HTML; drafts, scheduled posts, topics, reading time, related posts, an RSS feed, and an audio version per post with a podcast feed.
 - A contact form (`[contact-form]`) that saves every message in the control panel and emails it to you.
 - Images and files (JPEG, PNG, GIF, WebP, PDF, Word), a menu editor, a site template editor (layout, footer, stylesheet), private visitor counts with no cookies, a monthly link check with a daily health check, nightly backups and a one-click backup download.
 - Display options for visitors: text size and light, dark or high-contrast colors, remembered in their browser.

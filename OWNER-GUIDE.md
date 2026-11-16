@@ -35,6 +35,16 @@ If email sending is not set up yet, a warning explains that contact messages are
 2. Type the Post title. It becomes the main heading of the post, so inside the post start your sections with Heading 2.
 3. Move to "Post content". This is the visual editor. Activating its label puts you inside the editing area, which announces itself as "Post content".
 
+### Choosing an editor
+
+Above the content there is a group of radio buttons called **Editor** with three choices. Your choice is remembered in this browser.
+
+- **Visual**: the what-you-see-is-what-you-get editor (TinyMCE), described below.
+- **Blocks**: built for JAWS, NVDA and VoiceOver. Every paragraph, heading, list, quote and image is its own form field with a label, so there is no editing area that behaves differently in each screen reader. Each block has a **Block type** list (Paragraph, Heading 2 to 4, Bulleted list, Numbered list, Quote, Image, HTML) and buttons to **Add block below**, **Move up**, **Move down** and **Delete block**. After each action a short message tells you what happened and where your focus is. For bold, italic, a link or code, select the words and press the **Bold**, **Italic**, **Link** or **Code** button, or type the marks yourself: two asterisks around bold words, one asterisk around italic words, and `[link text](https://example.com)` for a link. An image block asks for the picture (upload it or paste its address), its alt text, and an optional caption. Anything the blocks can't describe, such as a table, appears as an HTML block and is kept exactly as it was.
+- **HTML**: the raw HTML in a plain text box, for people who prefer to write it directly.
+
+Switching between editors keeps your content; nothing is lost.
+
 ### Using the visual editor
 
 The editor is TinyMCE 7. Inside the editing area you type as in a word processor.
