@@ -1,0 +1,59 @@
+<!DOCTYPE html>
+<html lang="{{lang}}">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script>try{var d=document.documentElement,t=localStorage.getItem("fc-theme"),s=localStorage.getItem("fc-text");if(t&&t!=="auto")d.setAttribute("data-theme",t);if(s&&s!=="default")d.setAttribute("data-text",s)}catch(e){}</script>
+<title>{{title}}</title>
+<meta name="description" content="{{description}}">
+<link rel="canonical" href="{{canonical}}">
+{{alternates}}
+{{icon}}
+<link rel="alternate" type="application/rss+xml" title="{{site_name}} Blog" href="/blog/feed.xml">
+<meta name="theme-color" content="{{theme_color}}">
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="{{site_name}}">
+<meta property="og:title" content="{{page_title}}">
+<meta property="og:description" content="{{description}}">
+<meta property="og:url" content="{{canonical}}">
+{{og_image}}
+<meta name="twitter:card" content="summary">
+<link rel="preload" href="/assets/fonts/manrope-latin.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="stylesheet" href="/assets/css/site.css">
+{{palette_css}}
+</head>
+<body>
+<a class="skip-link" href="#main">{{skip_link}}</a>
+
+<header class="site-header">
+  <div class="wrap header-inner">
+    <a class="brand" href="{{home_url}}">
+      {{logo}}
+      <span class="brand-name">{{site_name}}</span>
+    </a>
+    <div class="header-tools">
+      {{search_link}}
+      {{language_switch}}
+      {{display_options}}
+    </div>
+    <nav class="site-nav" aria-label="{{menu_label}}">
+      {{menu}}
+    </nav>
+  </div>
+</header>
+
+<main id="main" tabindex="-1">
+  <div class="wrap content">
+{{content}}
+  </div>
+</main>
+
+<footer class="site-footer">
+  <div class="wrap">
+    {{footer}}
+    <p class="copyright">&copy; {{year}} {{copyright}}</p>
+  </div>
+</footer>
+<script src="/assets/js/site.js" defer></script>
+</body>
+</html>

@@ -1,0 +1,11 @@
+# Uploaded files are images only: never run them as code.
+Options -Indexes -ExecCGI
+<FilesMatch "\.(php\d?|phtml|phar|pl|py|cgi|sh|html?|svg)$">
+  Require all denied
+</FilesMatch>
+# cPanel runs PHP through a handler rather than mod_php, so take the handler away here too.
+RemoveHandler .php .php5 .php7 .php8 .phtml
+RemoveType .php .php5 .php7 .php8 .phtml
+<IfModule mod_php.c>
+  php_flag engine off
+</IfModule>

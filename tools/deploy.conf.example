@@ -1,0 +1,5 @@
+# Copy this file to tools/deploy.conf and fill it in. deploy.conf is ignored by git.
+SERVER="cpaneluser@example.com"     # SSH user and host
+REMOTE="public_html"                 # folder on the server that holds the site
+KEY="$HOME/.ssh/example_site"        # private key for the SSH connection (leave empty to use your default key)
+SITE_URL="https://example.com"       # only used in the message after an upload

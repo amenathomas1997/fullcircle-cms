@@ -1,0 +1,35 @@
+# Secrets and live state: never in git.
+data/*
+!data/.gitkeep
+!data/.htaccess
+backups/*
+!backups/.htaccess
+
+# Each site's own content lives on its server, not in this kit.
+content/pages/*
+content/posts/*
+content/resources/*
+content/stories/*
+content/revisions/*
+content/videos/*
+content/testimonials/*
+content/update-archive/*
+content/settings.json
+!content/pages/.gitkeep
+!content/posts/.gitkeep
+!content/resources/.gitkeep
+!content/stories/.gitkeep
+!content/revisions/.gitkeep
+
+# Visitor uploads (blog audio, images) stay on the server.
+uploads/*
+!uploads/.htaccess
+
+# Composer packages: run `composer install`.
+/vendor/
+
+# Per-machine deploy details and local tooling
+tools/deploy.conf
+scratchpad/
+.claude/
+.DS_Store
