@@ -473,6 +473,10 @@ function page_save(): never
         unset($v['parent']);
     }
     $oldPaths = $existing ? page_tree_paths($origSlug) : [];
+    // Where an imported item came from is kept across saves.
+    if (!empty($existing['imported_from'])) {
+        $v['imported_from'] = $existing['imported_from'];
+    }
     save_item('pages', $v['slug'], $v, $existing ? $origSlug : null);
     link_translation($v['slug'], $v['translation'] ?? '', $existing ? $origSlug : null);
     // Children follow a renamed page, and menu links follow every address that changed (the page's or its children's).
@@ -659,6 +663,10 @@ function post_save(): never
     }
     if ($errors) {
         post_form($v, $errors, $existing ? $origSlug : null);
+    }
+    // Where an imported item came from is kept across saves.
+    if (!empty($existing['imported_from'])) {
+        $v['imported_from'] = $existing['imported_from'];
     }
     save_item('posts', $v['slug'], $v, $existing ? $origSlug : null);
 
