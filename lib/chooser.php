@@ -121,7 +121,7 @@ function render_screen_reader_guide(string $path): string
             $result = '<div class="checker-result" role="status" tabindex="-1" data-focus-on-load aria-labelledby="guide-result">'
                 . '<h3 id="guide-result">' . h($t['result']) . '</h3><ol class="tool-list">' . $items . '</ol>'
                 . '<p>' . h($t['next']) . '</p><div class="buttons">'
-                . '<a class="button" href="' . h(contact_path($es ? 'es' : 'en')) . '">' . h($t['book']) . '</a></div>'
+                . apply_filters('chooser_result_buttons', '<a class="button" href="' . h(contact_path($es ? 'es' : 'en')) . '">' . h($t['book']) . '</a>') . '</div>'
                 . '<p><a href="' . h($path) . '#guide">' . h($t['again']) . '</a></p></div>';
         }
     }

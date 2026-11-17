@@ -412,7 +412,8 @@ function slug_error(string $type, string $slug, ?string $origSlug): ?string
     if (!valid_slug($slug)) {
         return 'Use only lowercase letters, numbers and single dashes in the address, for example about-us.';
     }
-    if ($type === 'pages' && in_array($slug, RESERVED_SLUGS, true) || ($type === 'pages' && $slug === 'home' && $origSlug !== 'home')) {
+    // A page that already has a reserved address may keep it (older sites have such pages); a new one can't take it.
+    if ($type === 'pages' && in_array($slug, RESERVED_SLUGS, true) && $slug !== $origSlug || ($type === 'pages' && $slug === 'home' && $origSlug !== 'home')) {
         return "The address “{$slug}” is used by the website itself. Choose a different one.";
     }
     if ($slug !== $origSlug && get_item($type, $slug)) {

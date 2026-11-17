@@ -137,6 +137,10 @@ function collect_links(): array
             $add($href, $from);
         }
     }
+    // A site's own code can add addresses to check: [url => page it is found on].
+    foreach ((array) apply_filters('link_check_urls', []) as $url => $from) {
+        $add((string) $url, (string) $from);
+    }
     return array_map('array_keys', $links);
 }
 
