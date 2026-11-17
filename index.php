@@ -277,7 +277,7 @@ function sitemap(): never
     header('Content-Type: application/xml; charset=utf-8');
     echo '<?xml version="1.0" encoding="UTF-8"?><urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">';
     foreach (all_items('pages') as $page) {
-        if (($page['status'] ?? '') === 'published') {
+        if (($page['status'] ?? '') === 'published' && (!function_exists('page_is_live') || page_is_live($page))) {
             echo '<url><loc>' . h(site_url(page_path($page['slug']))) . '</loc></url>';
         }
     }
