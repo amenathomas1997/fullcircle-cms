@@ -27,10 +27,17 @@ function create_starter_content(bool $spanish = false): void
 
     $pages = [
         'home' => ['title' => $name, 'hide_title' => true, 'description' => (string) $s['description'], 'body' =>
-            '<h1>Welcome to ' . h($name) . '</h1>'
-            . '<p class="lede">' . ($s['tagline'] !== '' ? h($s['tagline']) : 'This is your new website. Replace this paragraph with a sentence or two about what you do and who it is for.') . '</p>'
-            . '<h2>What you can do here</h2>'
-            . '<ul><li><a href="/about/">Find out more about ' . h($name) . '</a></li><li><a href="/blog/">Read the latest posts</a></li><li><a href="/contact/">Get in touch</a></li></ul>'
+            // Written in the exact shapes the Blocks editor's Hero, Features and Call to action blocks use, so the
+            // home page can be edited block by block from the first day without any HTML.
+            "<section class=\"hero\">\n<h1>Welcome to " . h($name) . "</h1>\n"
+            . '<p class="lede">' . ($s['tagline'] !== '' ? h($s['tagline']) : 'This is your new website. Replace this paragraph with a sentence or two about what you do and who it is for.') . "</p>\n"
+            . '<p class="buttons"><a class="button" href="/contact/">Get in touch</a> <a class="button button-outline" href="/about/">About ' . h($name) . "</a></p>\n</section>\n"
+            . "<section class=\"features\">\n<h2>What you can do here</h2>\n<ul class=\"feature-list\">\n"
+            . '<li><h3>Find out about us</h3><p>Read <a href="/about/">about ' . h($name) . "</a>: who we are and what we do.</p></li>\n"
+            . "<li><h3>Read the blog</h3><p>The <a href=\"/blog/\">latest posts</a>, news and updates.</p></li>\n"
+            . "<li><h3>Get in touch</h3><p>Send a message from the <a href=\"/contact/\">contact page</a>.</p></li>\n</ul>\n</section>\n"
+            . "<section class=\"cta\">\n<h2>Ready to get started?</h2>\n<p>Tell us what you need and we will get back to you.</p>\n"
+            . "<p class=\"buttons\"><a class=\"button\" href=\"/contact/\">Contact us</a></p>\n</section>\n"
             . '<p>To change this page, sign in to the control panel at <a href="/admin/">/admin/</a>, open Pages and choose Home.</p>'],
         'about' => ['title' => 'About', 'description' => 'About ' . $name . '.', 'body' =>
             '<p>Tell visitors who you are, what you do and why. A few short paragraphs work best, with a heading for each topic so screen reader users can jump between them.</p>'
