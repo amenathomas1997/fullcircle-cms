@@ -19,7 +19,7 @@ const DATA_DIR = ROOT . '/data';
 const UPLOAD_DIR = ROOT . '/uploads';
 const STYLESHEET = ROOT . '/assets/css/site.css';
 const MAX_REVISIONS = 25;
-const ITEM_TYPES = ['pages', 'posts', 'resources', 'videos', 'stories'];
+const ITEM_TYPES = ['pages', 'posts', 'resources', 'videos', 'stories', 'events', 'forms'];
 
 require_once __DIR__ . '/i18n.php';
 
@@ -235,7 +235,7 @@ function delete_item(string $type, string $slug): void
 /** $key identifies what changed: "pages/home", "posts/my-post", "resources/jaws", "template/layout", "template/css". */
 function revision_dir(string $key): string
 {
-    if (!preg_match('#^(pages|posts|resources|videos|stories|template)/[a-z0-9-]+$#', $key)) {
+    if (!preg_match('#^(pages|posts|resources|videos|stories|events|forms|template)/[a-z0-9-]+$#', $key)) {
         throw new InvalidArgumentException('Invalid revision key.');
     }
     return CONTENT_DIR . '/revisions/' . $key;
