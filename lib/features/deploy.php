@@ -727,7 +727,8 @@ function deploy_step_check(array &$job, string $credType, string $credential): a
         $errno = curl_errno($ch);
         curl_close($ch);
         $key = $path === '/' ? 'home_status' : 'admin_status';
-        if ($errno === CURLE_SSL_CACERT || $errno === CURLE_SSL_CONNECT_ERROR || $errno === CURLE_PEER_FAILED_VERIFICATION || $errno === 60 || $errno === 35) {
+        // cURL: 35 SSL connect error, 51 peer certificate, 58 local certificate, 60 CA certificate.
+        if (in_array($errno, [35, 51, 58, 60], true)) {
             $job['result'][$key] = 'no certificate yet';
             $lines[] = "The $what is not on https yet: the domain has no certificate. cPanel’s AutoSSL usually issues one within an hour of the domain pointing at the server.";
         } elseif ($errno !== 0) {
