@@ -13,6 +13,8 @@ const STRINGS = [
     'en' => [
         'skip' => 'Skip to main content',
         'menu_label' => 'Main',
+        'you_are_here' => 'You are here',
+        'home' => 'Home',
         'display' => 'Display options',
         'text_size' => 'Text size',
         'size_default' => 'Standard',
@@ -160,6 +162,8 @@ const STRINGS = [
     'es' => [
         'skip' => 'Saltar al contenido principal',
         'menu_label' => 'Principal',
+        'you_are_here' => 'Está aquí',
+        'home' => 'Inicio',
         'display' => 'Opciones de pantalla',
         'text_size' => 'Tamaño del texto',
         'size_default' => 'Normal',
@@ -324,7 +328,7 @@ function slug_lang(string $slug): string
     return $slug === 'es' || str_starts_with($slug, 'es-') ? 'es' : 'en';
 }
 
-/** The web address of a page. */
+/** The web address of a page. A page inside another (lib/features/nested-pages.php) comes after its parents: /services/reiki/. */
 function page_path(string $slug): string
 {
     if ($slug === 'home') {
@@ -333,8 +337,9 @@ function page_path(string $slug): string
     if ($slug === 'es') {
         return '/es/';
     }
+    $parents = function_exists('page_parent_path') ? page_parent_path($slug) : '';
     if (str_starts_with($slug, 'es-')) {
-        return '/es/' . substr($slug, 3) . '/';
+        return ($parents !== '' ? $parents : '/es/') . substr($slug, 3) . '/';
     }
-    return "/$slug/";
+    return ($parents !== '' ? $parents : '/') . "$slug/";
 }

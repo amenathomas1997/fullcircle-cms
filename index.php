@@ -3,6 +3,7 @@
  * Public website. Every address comes through here:
  *   /                          the page with the address "home"
  *   /<slug>/                   any other page
+ *   /<parent>/<slug>/          a page inside another page (up to three levels; wrong addresses redirect)
  *   /es/ and /es/<name>/       Spanish pages (files "es" and "es-<name>")
  *   /blog/                     blog posts, newest first (?q= searches, ?page= pages)
  *   /blog/category/<name>/     posts in one category
@@ -172,6 +173,13 @@ if ($first === 'es') {
     if (count($parts) === 1) {
         show_page('es', '/es/');
     }
+    // Pages inside other pages (lib/features/nested-pages.php): /es/servicios/reiki/, and a page at the wrong address goes to its own.
+    if (($slug = page_by_path($parts)) !== null) {
+        show_page($slug, page_path($slug));
+    }
+    if (($slug = page_at_wrong_path($parts)) !== null) {
+        redirect(page_path($slug));
+    }
     if (count($parts) === 2 && valid_slug($parts[1])) {
         show_page('es-' . $parts[1], "/es/{$parts[1]}/");
     }
@@ -190,6 +198,15 @@ if (count($parts) === 1) {
     if (valid_slug($first) && slug_lang($first) === 'es') {
         redirect(page_path($first));
     }
+}
+// Pages inside other pages (lib/features/nested-pages.php): /services/reiki/pricing/, and a page at the wrong address goes to its own.
+if (($slug = page_by_path($parts)) !== null) {
+    show_page($slug, page_path($slug));
+}
+if (($slug = page_at_wrong_path($parts)) !== null) {
+    redirect(page_path($slug));
+}
+if (count($parts) === 1) {
     show_page($first, "/$first/");
 }
 not_found();
@@ -272,6 +289,8 @@ function show_page(string $slug, string $path): never
     }
     $pageTitle = (string) ($page['title'] ?? $slug);
     $content = empty($page['hide_title']) ? '<h1>' . h($pageTitle) . "</h1>\n" . $body : $body;
+    // A page inside another page gets a "You are here" trail above its heading (lib/features/nested-pages.php).
+    $content = breadcrumbs_html($slug) . $content;
     // The English home page uses the site name and tagline as its title.
     $title = $slug === 'home' ? '' : $pageTitle;
     send_html(render_layout($title, $content, (string) ($page['description'] ?? ''), $path, $otherPath));
