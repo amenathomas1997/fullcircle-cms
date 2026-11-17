@@ -2,9 +2,9 @@
 /**
  * Microsoft 365 sign-in for the control panel (OpenID Connect, authorization
  * code flow with PKCE), using the same Microsoft app as the contact form.
- * Only people on the list in Settings can sign in, so each person has their own
- * account, and Microsoft's own security (such as two-step verification) applies.
- * The site password still works, as a way in if Microsoft is unavailable.
+ * A person who signs in with Microsoft 365 must have an account on the People screen
+ * with the same email address; they get that account's role, and Microsoft's own
+ * security (such as two-step verification) applies. Email and password still work too.
  */
 
 declare(strict_types=1);
@@ -17,11 +17,6 @@ function m365_redirect_uri(): string
 function m365_enabled(): bool
 {
     return !empty(config()['m365_signin']) && graph_app_configured() && preg_match('/^[0-9a-f-]{36}$/i', config()['graph_tenant_id']) === 1;
-}
-
-function admin_people(): array
-{
-    return (array) (config()['admin_people'] ?? []);
 }
 
 function base64url(string $bytes): string
@@ -96,82 +91,37 @@ function m365_callback(): never
         $fail('The sign-in couldn’t be checked, so it was refused. Please try again.');
     }
     $email = strtolower((string) ($claims['preferred_username'] ?? $claims['email'] ?? ''));
-    $person = null;
-    foreach (admin_people() as $p) {
-        if (strtolower($p['email']) === $email) {
-            $person = $p;
-        }
-    }
+    $person = find_user_by_email($email);
     if (!$person) {
-        $fail("$email isn’t on the list of people who can sign in to the control panel. Ask the site owner to add you in Settings.");
+        activity_log('failed sign-in', 'Microsoft 365 account with no matching person', null, $email);
+        $fail("$email doesn’t match anyone on the People screen. Ask the site owner to invite you with that email address.");
     }
     unset($_SESSION['oidc']);
-    begin_signed_in_session((string) ($person['name'] ?: ($claims['name'] ?? $email)), $email);
+    accounts_sign_in($person, 'Microsoft 365');
     flash('Signed in with Microsoft 365 as ' . $_SESSION['admin_name'] . '.');
     go(ADMIN_URL);
 }
 
-/** The Settings section for Microsoft 365 sign-in and the people who may use it. */
+/** The Settings section for Microsoft 365 sign-in: the switch and the app note. People themselves live on the People screen. */
 function people_settings_html(array $errors = []): string
 {
     $c = config();
-    $rows = '';
-    foreach (admin_people() as $i => $p) {
-        $rows .= '<tr><th scope="row">' . h($p['name']) . '</th><td>' . h($p['email']) . '</td><td>' . h(format_time($p['added'] ?? '')) . '</td><td>'
-            . '<form method="post" action="' . h(admin_url('settings')) . '#people-heading" class="inline">' . csrf_field()
-            . '<input type="hidden" name="part" value="people"><input type="hidden" name="remove" value="' . h($p['email']) . '">'
-            . '<button type="submit" class="button-link">Remove<span class="visually-hidden"> ' . h($p['name']) . '</span></button></form></td></tr>';
-    }
     return '<section aria-labelledby="people-heading"><h2 id="people-heading">Microsoft 365 sign-in</h2>'
-        . '<p>Let people sign in to this control panel with their own Microsoft 365 account, with Microsoft’s two-step verification. Changes are then recorded with their name. '
-        . 'The site password keeps working too.</p>'
+        . '<p>Let people sign in to this control panel with their Microsoft 365 account, with Microsoft’s two-step verification, instead of typing a password here. '
+        . 'A person’s Microsoft 365 address must match the email address of their account on the <a href="' . h(admin_url('people')) . '">People</a> screen; they get that account’s role. '
+        . 'Email and password sign-in keeps working too.</p>'
         . '<p><strong>Set up once in Microsoft Entra</strong> (the app registration you use for the contact form): under Authentication, add a <strong>Web</strong> redirect address of '
         . '<code>' . h(m365_redirect_uri()) . '</code>. The sign-in uses the <em>openid</em>, <em>profile</em> and <em>email</em> permissions, which need no admin consent.</p>'
-        . '<p>Status: <strong>' . (m365_enabled() ? 'On' : (graph_app_configured() ? 'Off' : 'Fill in the contact form email settings first')) . '</strong></p>'
+        . '<p>Status: <strong>' . (m365_enabled() ? 'On' : (graph_app_configured() ? 'Off' : 'Fill in the Microsoft 365 app details under Email sending first')) . '</strong></p>'
         . '<form method="post" action="' . h(admin_url('settings')) . '#people-heading">' . csrf_field() . '<input type="hidden" name="part" value="people">'
         . checkbox_field('m365_signin', 'Allow Microsoft 365 sign-in', !empty($c['m365_signin']))
-        . '<button type="submit" class="button">Save</button></form>'
-        . ($rows === '' ? '<p>No one is on the list yet.</p>'
-            : '<div class="table-wrap"><table><caption>People who can sign in with Microsoft 365</caption><thead><tr><th scope="col">Name</th><th scope="col">Microsoft 365 email</th><th scope="col">Added</th><th scope="col">Actions</th></tr></thead><tbody>' . $rows . '</tbody></table></div>')
-        . '<h3>Add a person</h3>'
-        . '<form method="post" action="' . h(admin_url('settings')) . '#people-heading" class="narrow">' . csrf_field() . '<input type="hidden" name="part" value="people">'
-        . text_field('person_name', 'Their name', '', ['autocomplete' => 'off', 'error' => $errors['person_name'] ?? null])
-        . text_field('person_email', 'Their Microsoft 365 email address', '', ['type' => 'email', 'autocomplete' => 'off', 'error' => $errors['person_email'] ?? null,
-            'hint' => 'The address they sign in to Microsoft with, for example name@yourcompany.com.'])
-        . '<button type="submit" class="button" name="add" value="1">Add person</button></form></section>';
+        . '<button type="submit" class="button">Save</button></form></section>';
 }
 
 function people_settings_save(): never
 {
-    $people = admin_people();
-    if (($remove = strtolower((string) ($_POST['remove'] ?? ''))) !== '') {
-        $people = array_values(array_filter($people, fn($p) => strtolower($p['email']) !== $remove));
-        save_config(['admin_people' => $people]);
-        flash("Removed $remove. If they were signed in, they have been signed out.");
-        go(admin_url('settings') . '#people-heading');
-    }
-    if (!empty($_POST['add'])) {
-        $name = trim((string) ($_POST['person_name'] ?? ''));
-        $email = strtolower(trim((string) ($_POST['person_email'] ?? '')));
-        $errors = [];
-        if ($name === '') {
-            $errors['person_name'] = 'Enter the person’s name.';
-        }
-        if (!filter_var($email, FILTER_VALIDATE_EMAIL)) {
-            $errors['person_email'] = 'Enter their Microsoft 365 email address, like name@yourcompany.com.';
-        } elseif (in_array($email, array_map('strtolower', array_column($people, 'email')), true)) {
-            $errors['person_email'] = "$email is already on the list.";
-        }
-        if ($errors) {
-            settings_form($errors);
-        }
-        $people[] = ['name' => $name, 'email' => $email, 'added' => date('c')];
-        save_config(['admin_people' => $people]);
-        flash("Added $name. They can sign in with Microsoft 365 once it’s turned on.");
-        go(admin_url('settings') . '#people-heading');
-    }
     save_config(['m365_signin' => !empty($_POST['m365_signin'])]);
-    flash(!empty($_POST['m365_signin']) ? 'Microsoft 365 sign-in is on.' : 'Microsoft 365 sign-in is off.');
+    flash(!empty($_POST['m365_signin']) ? 'Microsoft 365 sign-in is on for everyone on the People screen.' : 'Microsoft 365 sign-in is off.');
     go(admin_url('settings') . '#people-heading');
 }
 

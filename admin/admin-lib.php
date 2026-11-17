@@ -66,6 +66,9 @@ function start_admin_session(): void
  */
 function session_revoked(): ?string
 {
+    if (accounts_exist()) {
+        return accounts_session_revoked();
+    }
     $c = config();
     if (($_SESSION['login_at'] ?? 0) < (int) ($c['sessions_valid_from'] ?? 0)) {
         return 'The site password was changed, so you were signed out. Please sign in again.';
@@ -253,7 +256,8 @@ function admin_nav(): array
     }
     $settings = ['template' => $items['template'], 'settings' => $items['settings']];
     unset($items['template'], $items['settings']);
-    return $items + $extra + $settings;
+    // Only the screens this person's role can open (lib/features/accounts.php).
+    return array_filter($items + $extra + $settings, 'can_open', ARRAY_FILTER_USE_KEY);
 }
 
 /** The names and one-line descriptions of the optional features, for Settings and setup. */
