@@ -206,6 +206,12 @@ function role_label(string $role): string
 }
 
 /** Does the signed-in person have at least this role? */
+/** Owners see the System, Sites, Backups, People and Activity screens. */
+function is_owner(): bool
+{
+    return current_role() === 'owner';
+}
+
 function role_at_least(string $role): bool
 {
     return (ROLES[current_role()] ?? 0) >= (ROLES[$role] ?? PHP_INT_MAX);
