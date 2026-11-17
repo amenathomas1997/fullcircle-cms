@@ -176,6 +176,7 @@ function deploy_exec(array $argv, array $env = [], int $timeout = 300, string $s
     $out = $err = '';
     $deadline = microtime(true) + $timeout;
     $timedOut = false;
+    $exitCode = null;
     while (true) {
         $read = [$pipes[1], $pipes[2]];
         $w = $e = null;
@@ -190,6 +191,10 @@ function deploy_exec(array $argv, array $env = [], int $timeout = 300, string $s
             }
         }
         $status = proc_get_status($proc);
+        if (!$status['running'] && $exitCode === null) {
+            // Before PHP 8.3, proc_close() answers -1 once proc_get_status() has seen the process end; keep the real code.
+            $exitCode = (int) $status['exitcode'];
+        }
         if (!$status['running'] && feof($pipes[1]) && feof($pipes[2])) {
             break;
         }
@@ -203,7 +208,8 @@ function deploy_exec(array $argv, array $env = [], int $timeout = 300, string $s
     $err .= (string) stream_get_contents($pipes[2]);
     fclose($pipes[1]);
     fclose($pipes[2]);
-    $code = proc_close($proc);
+    $closed = proc_close($proc);
+    $code = $exitCode ?? $closed;
     if ($timedOut) {
         return [124, $out, trim($err . "\nStopped after $timeout seconds.")];
     }
