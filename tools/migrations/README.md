@@ -1,0 +1,1 @@
+Migrations are small PHP files named `NNN-what-it-does.php` (three digits, then a dash). `php tools/update.php --apply` runs each one once, in number order, with the kit loaded (`lib/bootstrap.php`), and notes it in `data/migrations.json`. Write every migration so that running it twice does no harm.

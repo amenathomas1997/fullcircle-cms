@@ -333,6 +333,7 @@ function admin_screen(string $title, string $body, string $section = '', array $
     $brandLogo = $logo !== '' ? '<img src="' . h($logo) . '" alt="" height="38"> ' : '';
     $brandName = h(settings()['site_name']);
     $scripts = $opts['scripts'] ?? '';
+    $version = function_exists('cms_version') ? '<footer class="admin-footer"><p>Full Circle CMS ' . h(cms_version()) . '</p></footer>' : '';
 
     echo <<<HTML
 <!DOCTYPE html>
@@ -358,6 +359,7 @@ function admin_screen(string $title, string $body, string $section = '', array $
 <h1>{$title}</h1>
 {$body}
 </main>
+{$version}
 <script src="/admin/admin.js" defer></script>
 {$scripts}
 </body>
