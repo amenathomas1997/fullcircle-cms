@@ -249,7 +249,7 @@ function blog_post(string $slug): never
     current_lang(slug_lang($slug));
     $post = get_item('posts', $slug);
     $visible = $post && ($post['status'] ?? '') === 'published' && post_time($post) > 0 && post_time($post) <= time();
-    if (!$post || (!$visible && !can_preview())) {
+    if (!$post || (!$visible && !can_preview() && !reviewing('posts', $slug))) {
         not_found();
     }
     $listen = '';

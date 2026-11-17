@@ -555,7 +555,7 @@ function render_layout(string $title, string $content, string $description = '',
         '{{description}}' => h($description !== '' ? $description : $s['description']),
         '{{canonical}}' => h(site_url($path)),
         '{{menu}}' => render_menu($path),
-        '{{footer}}' => $lang === 'es' && $s['footer_html_es'] !== '' ? $s['footer_html_es'] : $s['footer_html'],
+        '{{footer}}' => function_exists('render_footer') ? render_footer($lang) : ($lang === 'es' && $s['footer_html_es'] !== '' ? $s['footer_html_es'] : $s['footer_html']),
         '{{lang}}' => $lang,
         '{{home_url}}' => $lang === 'es' ? '/es/' : '/',
         '{{skip_link}}' => h(t('skip')),
@@ -580,6 +580,11 @@ function render_layout(string $title, string $content, string $description = '',
         ['/assets/css/site.css?v=' . (@filemtime(STYLESHEET) ?: 1) . '"', '/assets/js/site.js?v=' . (@filemtime(ROOT . '/assets/js/site.js') ?: 1) . '"'],
         layout_template()
     );
+    if (!empty($GLOBALS['layout_banner'])) {
+        // A review link: a banner above the content, and search engines are told to stay away.
+        $content = $GLOBALS['layout_banner'] . $content;
+        $html = preg_replace('#</head>#i', '<meta name="robots" content="noindex">' . '</head>', $html, 1);
+    }
     if (function_exists('structured_data_html')) {
         // A callback, so backslashes and dollar signs in the JSON are kept as they are.
         $html = preg_replace_callback('#</head>#i', fn() => structured_data_html() . '</head>', $html, 1);
