@@ -90,6 +90,20 @@ const STRINGS = [
         'search_results_for' => 'Search results for',
         'found_one' => '1 post found.',
         'found_many' => '%d posts found.',
+        // Footer (built from the Footer screen)
+        'footer_contact' => 'Contact',
+        'footer_links' => 'Links',
+        'footer_call' => 'Call or text:',
+        'footer_email' => 'Email:',
+        'footer_contact_us' => 'Contact us',
+        // Review links
+        'review_banner' => 'Review copy of a draft, shared by %s until %s',
+        'review_banner_live' => 'Review copy, shared by %s until %s',
+        'review_expired_title' => 'This review link has expired',
+        'review_expired_body' => 'Review links only work for a short time. Ask the person who sent it for a new one.',
+        'review_expired_contact' => 'If you were expecting to see something else,',
+        'review_contact_link' => 'contact us',
+        'review_home_link' => 'Go to the home page',
     ],
     'es' => [
         'skip' => 'Saltar al contenido principal',
@@ -168,6 +182,20 @@ const STRINGS = [
         'search_results_for' => 'Resultados para',
         'found_one' => 'Se encontró 1 publicación.',
         'found_many' => 'Se encontraron %d publicaciones.',
+        // Footer
+        'footer_contact' => 'Contacto',
+        'footer_links' => 'Enlaces',
+        'footer_call' => 'Llame o envíe un mensaje de texto:',
+        'footer_email' => 'Correo electrónico:',
+        'footer_contact_us' => 'Contáctenos',
+        // Review links
+        'review_banner' => 'Copia de revisión de un borrador, compartida por %s hasta el %s',
+        'review_banner_live' => 'Copia de revisión, compartida por %s hasta el %s',
+        'review_expired_title' => 'Este enlace de revisión ha caducado',
+        'review_expired_body' => 'Los enlaces de revisión solo funcionan por poco tiempo. Pida uno nuevo a la persona que se lo envió.',
+        'review_expired_contact' => 'Si esperaba ver otra cosa,',
+        'review_contact_link' => 'contáctenos',
+        'review_home_link' => 'Ir a la página de inicio',
     ],
 ];
 

@@ -8,7 +8,7 @@
 
 declare(strict_types=1);
 
-/** Create the starter pages, a first blog post, the menu and the footer. Does nothing if pages already exist. */
+/** Create the starter pages, a first blog post, the menu and the footer (as Footer screen groups). Does nothing if pages already exist. */
 function create_starter_content(bool $spanish = false): void
 {
     if (all_items('pages')) {
@@ -96,16 +96,12 @@ function create_starter_content(bool $spanish = false): void
 
     $menu = [['label' => 'Home', 'url' => '/'], ['label' => 'About', 'url' => '/about/'], ['label' => 'Blog', 'url' => '/blog/'], ['label' => 'Contact', 'url' => '/contact/']];
     $menuEs = $spanish ? [['label' => 'Inicio', 'url' => '/es/'], ['label' => 'Acerca de', 'url' => '/es/acerca-de/'], ['label' => 'Blog', 'url' => '/es/blog/'], ['label' => 'Contacto', 'url' => '/es/contacto/']] : [];
-    $footer = '<div class="footer-columns"><section aria-labelledby="footer-contact"><h2 id="footer-contact">Contact</h2>'
-        . ($contactLines !== '' ? $contactLines : '<p><a href="/contact/">Contact us</a></p>') . '</section>'
-        . '<section aria-labelledby="footer-more"><h2 id="footer-more">More</h2><ul>'
-        . '<li><a href="/about/">About</a></li><li><a href="/blog/">Blog</a></li><li><a href="/accessibility/">Accessibility statement</a></li><li><a href="/privacy/">Privacy</a></li>'
-        . ($spanish ? '<li><a href="/es/" lang="es" hreflang="es">En español</a></li>' : '') . '</ul></section></div>';
-    $footerEs = $spanish ? '<div class="footer-columns"><section aria-labelledby="footer-contact"><h2 id="footer-contact">Contacto</h2>'
-        . ($contactLines !== '' ? $contactLines : '<p><a href="/es/contacto/">Contáctenos</a></p>') . '</section>'
-        . '<section aria-labelledby="footer-more"><h2 id="footer-more">Más</h2><ul>'
-        . '<li><a href="/es/acerca-de/">Acerca de</a></li><li><a href="/es/blog/">Blog</a></li><li><a href="/es/accesibilidad/">Declaración de accesibilidad</a></li><li><a href="/es/privacidad/">Privacidad</a></li>'
-        . '<li><a href="/" lang="en" hreflang="en">English</a></li></ul></section></div>' : '';
-    save_settings(array_merge(settings(), ['menu' => $menu, 'menu_es' => $menuEs, 'footer_html' => $footer, 'footer_html_es' => $footerEs,
+    $footer = ['contact' => true, 'small_print' => '', 'groups' => [['heading' => 'More', 'links' => array_merge(
+        [['label' => 'About', 'url' => '/about/'], ['label' => 'Blog', 'url' => '/blog/'], ['label' => 'Accessibility statement', 'url' => '/accessibility/'], ['label' => 'Privacy', 'url' => '/privacy/']],
+        $spanish ? [['label' => 'En español', 'url' => '/es/']] : [])]]];
+    $footerEs = $spanish ? ['contact' => true, 'small_print' => '', 'groups' => [['heading' => 'Más', 'links' => [
+        ['label' => 'Acerca de', 'url' => '/es/acerca-de/'], ['label' => 'Blog', 'url' => '/es/blog/'], ['label' => 'Declaración de accesibilidad', 'url' => '/es/accesibilidad/'],
+        ['label' => 'Privacidad', 'url' => '/es/privacidad/'], ['label' => 'English', 'url' => '/']]]]] : null;
+    save_settings(array_merge(settings(), ['menu' => $menu, 'menu_es' => $menuEs, 'footer_groups' => $footer, 'footer_groups_es' => $footerEs,
         'contact_page' => '/contact/', 'contact_page_es' => '/es/contacto/']));
 }

@@ -259,7 +259,7 @@ function dashboard(): never
 function status_label(array $item): string
 {
     $status = $item['status'] ?? 'draft';
-    if ($status === 'published' && isset($item['date']) && $item['date'] > date('Y-m-d\TH:i')) {
+    if ($status === 'published' && ($item['date'] ?? $item['publish_at'] ?? '') > date('Y-m-d\TH:i')) {
         return 'Scheduled';
     }
     return $status === 'published' ? 'Published' : 'Draft';
@@ -322,7 +322,9 @@ function page_form(?array $values = null, array $errors = [], ?string $origSlug 
             'hint' => 'Only tick this if the page HTML starts with its own <code>&lt;h1&gt;</code> heading. Every page needs exactly one.'])
         . textarea_field('description', 'Search engine description (optional)', (string) ($v['description'] ?? ''), ['rows' => 3,
             'hint' => 'One or two sentences shown under the page title in search results.'])
-        . radio_field('status', 'Status', ['published' => 'Published, anyone can see it', 'draft' => 'Draft, only you can see it'], (string) ($v['status'] ?? 'published'));
+        . radio_field('status', 'Status', ['published' => 'Published, anyone can see it', 'draft' => 'Draft, only you can see it'], (string) ($v['status'] ?? 'published'))
+        . text_field('publish_at', 'Publish on (optional)', substr((string) ($v['publish_at'] ?? ''), 0, 16), ['type' => 'datetime-local', 'error' => $errors['publish_at'] ?? null,
+            'hint' => 'Pick a future date and time to schedule a published page. Until then only you can see it, and Pages lists it as Scheduled. Leave it empty to publish straight away.']);
     if ($isNew) {
         $body .= checkbox_field('add_to_menu', 'Add this page to the main menu', !empty($v['add_to_menu']));
     }
@@ -339,7 +341,7 @@ function page_form(?array $values = null, array $errors = [], ?string $origSlug 
         if (!$isHome) {
             $body .= '<li><a href="' . h(admin_url('delete', ['type' => 'pages', 'slug' => $origSlug])) . '">Delete this page</a></li>';
         }
-        $body .= '</ul>';
+        $body .= '</ul>' . (function_exists('review_links_section') ? review_links_section('pages', $origSlug) : '');
     }
     admin_screen($isNew ? 'Add a page' : 'Edit page: ' . h($existing['title']), $body, 'pages', ['errors' => $errors, 'scripts' => editor_scripts()]);
 }
@@ -372,6 +374,7 @@ function page_save(): never
         'body' => str_replace("\r\n", "\n", (string) ($_POST['body'] ?? '')),
         'add_to_menu' => !empty($_POST['add_to_menu']),
         'translation' => (string) ($_POST['translation'] ?? ''),
+        'publish_at' => (string) ($_POST['publish_at'] ?? ''),
     ];
     if ($v['translation'] !== '' && (!valid_slug($v['translation']) || !get_item('pages', $v['translation']))) {
         $v['translation'] = '';
@@ -388,6 +391,9 @@ function page_save(): never
     } elseif ($v['slug'] === '' && $v['title'] !== '') {
         $errors['slug'] = 'Enter an address for the page using letters or numbers.';
     }
+    if (($publishAt = clean_publish_at($v['publish_at'])) === null) {
+        $errors['publish_at'] = 'Enter the publish date and time, for example 06/09/2025 08:42 PM, or leave it empty.';
+    }
     if (stale_edit($existing)) {
         $errors['title'] = stale_edit_message($existing);
     }
@@ -397,6 +403,10 @@ function page_save(): never
 
     $addToMenu = $v['add_to_menu'];
     unset($v['add_to_menu']);
+    $v['publish_at'] = $publishAt;
+    if ($v['publish_at'] === '') {
+        unset($v['publish_at']);
+    }
     if ($v['translation'] === '') {
         unset($v['translation']);
     }
@@ -424,7 +434,9 @@ function page_save(): never
     if (($_POST['then'] ?? '') === 'view') {
         go(page_path($v['slug']));
     }
-    flash(($existing ? 'Saved your changes to ' : 'Created the page ') . '“' . $v['title'] . '”.' . ($v['status'] === 'draft' ? ' It is a draft, so only you can see it.' : ''));
+    $state = $v['status'] === 'draft' ? ' It is a draft, so only you can see it.'
+        : (page_is_scheduled($v) ? ' It is scheduled: visitors will see it from ' . format_time((string) $v['publish_at']) . '.' : '');
+    flash(($existing ? 'Saved your changes to ' : 'Created the page ') . '“' . $v['title'] . '”.' . $state);
     go(admin_url('page', ['slug' => $v['slug']]));
 }
 
@@ -537,7 +549,8 @@ function post_form(?array $values = null, array $errors = [], ?string $origSlug 
         $body .= '<h2>More options</h2><ul>'
             . '<li><a href="/blog/' . h($origSlug) . '/">View this post on the website</a></li>'
             . '<li><a href="' . h(admin_url('revisions', ['key' => "posts/$origSlug"])) . '">Earlier versions of this post</a> (' . count(list_revisions("posts/$origSlug")) . ')</li>'
-            . '<li><a href="' . h(admin_url('delete', ['type' => 'posts', 'slug' => $origSlug])) . '">Delete this post</a></li></ul>';
+            . '<li><a href="' . h(admin_url('delete', ['type' => 'posts', 'slug' => $origSlug])) . '">Delete this post</a></li></ul>'
+            . (function_exists('review_links_section') ? review_links_section('posts', $origSlug) : '');
     }
 
     admin_screen($isNew ? 'Write a blog post' : 'Edit post: ' . h($existing['title']), $body, 'posts', [
@@ -1171,7 +1184,7 @@ function template_form(array $errors = [], array $values = []): never
         . '<form method="post" action="' . h(admin_url('template')) . '" data-editor-form>' . csrf_field()
         . '<input type="hidden" name="part" value="footer">'
         . textarea_field('footer', 'Footer HTML', $footer, ['rows' => 16, 'code' => true, 'class' => 'field-wide',
-            'hint' => 'Fills the <code>{{footer}}</code> placeholder at the bottom of every page.'])
+            'hint' => 'Fills the <code>{{footer}}</code> placeholder at the bottom of every page. Used only when the <a href="' . h(admin_url('footer')) . '">Footer screen</a> has no groups.'])
         . '<div class="form-actions"><button type="submit" class="button">Save footer</button>'
         . '<a href="' . h(admin_url('revisions', ['key' => 'template/footer'])) . '">Earlier versions of the footer</a></div></form></section>'
 
@@ -1179,7 +1192,7 @@ function template_form(array $errors = [], array $values = []): never
         . '<form method="post" action="' . h(admin_url('template')) . '" data-editor-form>' . csrf_field()
         . '<input type="hidden" name="part" value="footer_es">'
         . textarea_field('footer_es', 'Spanish footer HTML', $footerEs, ['rows' => 16, 'code' => true, 'class' => 'field-wide',
-            'hint' => 'Used instead of the footer above on Spanish pages. Leave it empty to use the English footer.'])
+            'hint' => 'Used instead of the footer above on Spanish pages, and only when the Footer screen has no Spanish groups. Leave it empty to use the English footer.'])
         . '<div class="form-actions"><button type="submit" class="button">Save Spanish footer</button>'
         . '<a href="' . h(admin_url('revisions', ['key' => 'template/footer-es'])) . '">Earlier versions of the Spanish footer</a></div></form></section>'
 

@@ -250,7 +250,8 @@ function show_page(string $slug, string $path): never
     }
     current_lang(slug_lang($slug));
     $page = get_item('pages', $slug);
-    if (!$page || (($page['status'] ?? '') !== 'published' && !can_preview())) {
+    // Drafts and pages waiting for their publish date are only shown to someone signed in, or holding a review link for this page.
+    if (!$page || (!page_is_live($page) && !can_preview() && !reviewing('pages', $slug))) {
         not_found();
     }
     $body = render_shortcodes((string) ($page['body'] ?? ''), $path);
