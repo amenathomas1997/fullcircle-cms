@@ -169,7 +169,12 @@ function check_for_updates(): array
 /** The last update check, or null when none has run. */
 function update_status(): ?array
 {
-    return read_json(UPDATE_STATUS);
+    $status = read_json(UPDATE_STATUS);
+    // Right after an update the last check still says the new version is "available"; read it against the version now installed.
+    if ($status && ($status['status'] ?? '') === 'available' && version_compare((string) ($status['available'] ?? '0'), cms_version(), '<=')) {
+        $status['status'] = 'up-to-date';
+    }
+    return $status;
 }
 
 /** Plain words for the last update check, for the System screen, the Dashboard and the fleet. */
