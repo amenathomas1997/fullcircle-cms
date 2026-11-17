@@ -12,6 +12,8 @@ on:
 jobs:
   test:
     name: PHP ${{ matrix.php }}
+    # Sites built from the kit carry this file too; they have their own workflow, so this one runs only in the kit.
+    if: github.repository == 'amenathomas1997/fullcircle-cms'
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
