@@ -28,7 +28,13 @@ const BACKUP_KEEP = 30;
 function backup_dir(): string
 {
     $dir = trim((string) (config()['backup_dir'] ?? ''));
-    return $dir !== '' ? rtrim($dir, '/') : dirname(realpath(ROOT) ?: ROOT) . '/site-backups/content';
+    if ($dir !== '') {
+        return rtrim($dir, '/');
+    }
+    // The same rule as tools/backup.sh: the account's home folder, so a site in a subfolder of public_html
+    // (a subdomain) is not backed up inside the web root.
+    $home = (string) (getenv('HOME') ?: (function_exists('posix_getpwuid') ? (posix_getpwuid(posix_geteuid())['dir'] ?? '') : ''));
+    return ($home !== '' ? rtrim($home, '/') : dirname(realpath(ROOT) ?: ROOT)) . '/site-backups/content';
 }
 
 /** Every nightly archive, newest first: name, path, time, size and the manifest beside it when there is one. */
