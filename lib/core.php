@@ -19,7 +19,7 @@ const DATA_DIR = ROOT . '/data';
 const UPLOAD_DIR = ROOT . '/uploads';
 const STYLESHEET = ROOT . '/assets/css/site.css';
 const MAX_REVISIONS = 25;
-const ITEM_TYPES = ['pages', 'posts', 'resources', 'videos', 'stories', 'products', 'events', 'forms'];
+const ITEM_TYPES = ['pages', 'posts', 'resources', 'videos', 'stories', 'products', 'events', 'forms', 'services'];
 
 require_once __DIR__ . '/i18n.php';
 

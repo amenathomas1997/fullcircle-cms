@@ -28,6 +28,7 @@ Optional, each with a switch in Settings, then Features:
 - Success stories (off): stories at `/success-stories/` with a consent check.
 - Ask a question, Claude (off): `[ask-assistant]` answers visitors' questions from the site's own content. Needs an Anthropic API key and Composer.
 - Microsoft Bookings next opening (off): `[next-opening]` shows the next free slot in a Bookings calendar.
+- Appointments (off): visitors book a time at `/book/`. Openings come from your hours and your own calendar, a cPanel-hosted (CalDAV) calendar, a Microsoft 365 or Outlook.com calendar, or a Google Calendar, and every booking is written into it. Confirmation, cancel link and a reminder the day before. Shortcode `[book]`. See Appointments below.
 - Second language pages (off): a second side of the site in any of fifteen languages, Spanish at `/es/` for example, with its own menu, footer, blog, search, events list and a language switch, plus a Translations screen for the site's own words. See Languages below.
 
 Turning a feature off hides its pages, screens and shortcodes. Nothing is deleted.
@@ -194,6 +195,43 @@ On the same app registration, add the Microsoft Graph application permission Boo
 ### Microsoft 365 sign-in for the control panel
 
 On the same app registration, under Authentication, add a Web redirect URI of `https://your-domain/admin/oauth.php` (the exact address is shown in Settings). The sign-in uses the `openid`, `profile` and `email` scopes with PKCE and needs no admin consent, but the tenant ID must be the GUID form. Tick "Allow Microsoft 365 sign-in" in Settings. A person can use it when their Microsoft 365 address matches the email of their account on the People screen; they get that account's role. Email and password sign-in keeps working.
+
+## Appointments
+
+Turn on **Appointments** under Settings, then Features, and open the Appointments screen. It has four parts:
+
+- **Services**: what can be booked, each with a name, a length in minutes, an optional price, where it happens and a short description. Each service has its own page under `/book/`; `/book/` lists them (or goes straight to the only one). Put `[book]` on any page to list them there.
+- **Hours and wording**: the hours you take appointments for each weekday (two ranges a day, so a lunch break works), how far apart start times are offered, a gap kept between appointments, the shortest notice, how far ahead people can book, whether to ask for a phone number, the label of the notes box, and the text shown after booking. Times are in the site's time zone from Settings.
+- **Calendar** (owner only): the one calendar that says when you are busy. Any busy time there is never offered, and every booking is written into it as an event with the visitor's details. A visitor's booking is checked against the calendar again at the moment they confirm, so two people cannot take the same time.
+- **Bookings**: who booked what and when, with a cancel link. Cancelling removes the event from the calendar and emails the visitor.
+
+The visitor picks a day (only days with openings are listed), then a time from a list of radio buttons, fills in their name and email, and gets a confirmation page and email with an "Add to my calendar" file and a cancel link. The owner is emailed too. A reminder goes to the visitor about a day before (the hourly cron job sends it). Bookings are kept as one JSON file each in `data/appointments/`.
+
+### A cPanel-hosted calendar, or any CalDAV calendar
+
+cPanel gives every email account a calendar (Calendars and Contacts in webmail). On the Calendar tab choose CalDAV, enter the server address as your domain with port 2080, for example `https://example.com:2080`, the email account as the user name and its password, save, then press **Find calendars** and pick the calendar. The same works for iCloud (`https://caldav.icloud.com` with an app-specific password), Fastmail (`https://caldav.fastmail.com`) and Nextcloud. Repeating events are expanded here for the usual rules (daily, weekly on given days, monthly, yearly, with end dates, counts and skipped dates); events marked as free, and cancelled events, do not block time. An all-day event blocks the whole day unless it is marked as free.
+
+### A Microsoft 365 or Outlook.com calendar
+
+This uses the same Microsoft app registration as email sending (Settings, Email sending), but as *you*, not as the app, so it also works for a personal Outlook.com calendar. On the app registration:
+
+1. Under Authentication, add a Web redirect URI of `https://your-domain/admin/calendar-oauth.php`.
+2. Under API permissions, add the **delegated** permission `Calendars.ReadWrite` (Microsoft Graph). Admin consent is not needed for your own calendar.
+3. For a personal account, the app registration's supported account types must include personal Microsoft accounts.
+
+Then on the Calendar tab choose Microsoft, pick the account kind, save, and press **Connect a Microsoft calendar**. You sign in once; the site keeps a refresh token in `data/config.php` and renews it itself. If the account has several calendars, pick one after connecting. By default the visitor is added to the event as a guest, so Outlook sends them a calendar invitation as well as the site's own email; turn that off under Hours and wording.
+
+### A Google Calendar
+
+Google calendars are reached through a *service account*, so there is no sign-in screen and nothing to renew:
+
+1. In [Google Cloud Console](https://console.cloud.google.com/) make a project (or use any), turn on the **Google Calendar API**, and under IAM and admin, Service accounts, make a service account. Under its Keys, add a key of type JSON and download the file.
+2. In Google Calendar, open the calendar's settings, **Share with specific people**, and add the service account's email address (it ends in `.iam.gserviceaccount.com`) with **Make changes to events**.
+3. On the Calendar tab choose Google, paste the whole key file into the key box, enter the calendar ID (your Gmail address, or the ID shown under Integrate calendar) and save.
+
+A service account cannot invite guests, so the visitor's calendar entry comes from the site's email and its "Add to my calendar" file.
+
+**Test the calendar connection** on the Calendar tab tries the connection and reports what it found. **Forget the saved credentials and tokens** removes everything the site holds for the calendar.
 
 ## Payments (Stripe Checkout)
 

@@ -43,3 +43,7 @@ scratchpad/
 # Products for payments are content too.
 content/products/*
 !content/products/.gitkeep
+
+# Services for appointments are content too.
+content/services/*
+!content/services/.gitkeep

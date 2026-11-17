@@ -26,7 +26,7 @@ function dir_size(string $dir): int
 /** Files inside data/ that never leave the server, and never come back from an archive: secrets, people and caches. */
 function ops_private_file(string $relative): bool
 {
-    return (bool) preg_match('#^data/(config\.php|graph-token\.php|deploy-key(\.pub)?|deploy-known-hosts|users\.json|users/|stats/salt-[^/]+|login-attempts\.json|contact-rate\.json|cache/|setup-code\.txt|outbox/\.lock)#', $relative);
+    return (bool) preg_match('#^data/(config\.php|graph-token\.php|appt-token\.php|book-rate\.json|deploy-key(\.pub)?|deploy-known-hosts|users\.json|users/|stats/salt-[^/]+|login-attempts\.json|contact-rate\.json|cache/|setup-code\.txt|outbox/\.lock)#', $relative);
 }
 
 /** Is this path inside an archive one we would ever write back? Only the four site folders, nothing that climbs out. */

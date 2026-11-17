@@ -333,7 +333,7 @@ function admin_screen(string $title, string $body, string $section = '', array $
         // The menu is long, so it is read as a few named groups rather than one list of thirty links.
         $groups = [
             'Content' => ['dashboard', 'pages', 'posts', 'resources', 'media', 'menu', 'footer', 'events', 'forms', 'products', 'testimonials', 'videos', 'stories'],
-            'People and messages' => ['messages', 'updates', 'orders', 'people', 'activity', 'account'],
+            'People and messages' => ['messages', 'appointments', 'updates', 'orders', 'people', 'activity', 'account'],
             'Checks and tools' => ['visitors', 'links', 'a11y', 'redirects', 'import', 'translations', 'system', 'sites', 'deploy', 'backups'],
             'Site' => ['template', 'settings'],
         ];

@@ -199,3 +199,9 @@ table.translations th[scope="row"] { font-weight: normal; }
 dl.meta { display: grid; grid-template-columns: max-content 1fr; gap: .35rem 1.25rem; margin: 0 0 1.5rem; }
 dl.meta dt { font-weight: 600; }
 dl.meta dd { margin: 0; overflow-wrap: anywhere; }
+
+.tabs { list-style: none; padding: 0; margin: 0 0 1.5rem; display: flex; flex-wrap: wrap; gap: .5rem; }
+.tabs a { display: inline-block; padding: .5rem .9rem; border: 2px solid var(--border); border-radius: 999px; text-decoration: none; font-weight: 700; }
+.tabs a[aria-current="page"] { background: var(--purple); color: #fff; border-color: var(--purple); }
+.field-inline { display: flex; flex-wrap: wrap; gap: .75rem 1.25rem; align-items: flex-end; }
+.field-inline .field { margin-bottom: .5rem; }

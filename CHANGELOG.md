@@ -2,6 +2,13 @@
 
 Every release of the kit is listed here, newest first. `php tools/update.php` prints the entries that are new since the version a site has installed.
 
+## 1.4.0 — 2026-11-17
+
+### Appointments
+
+- An **Appointments** feature (off by default). Visitors book a time at `/book/`: a service, a day with openings, a time, their details. Openings are worked out from the owner's hours and the busy times in one connected calendar, which can be a cPanel-hosted or other CalDAV calendar (iCloud, Fastmail, Nextcloud), a Microsoft 365 or Outlook.com calendar connected by signing in once, or a Google Calendar shared with a service account. Each booking is written into that calendar, checked again at the moment of confirming so a time cannot be taken twice, and kept in `data/appointments/`. The visitor gets a confirmation email with an "Add to my calendar" file and a cancel link, the owner is emailed, and a reminder goes out the day before. The Appointments screen has Bookings, Services, Hours and wording, and Calendar tabs, with a connection test. Shortcode `[book]`.
+- Deploy screen fixes from the first real deployment: the command runner read the exit code wrongly on PHP 8.1 (a successful step looked like a failure), the final check used a cURL constant PHP does not define, and the cPanel sign-in error now explains two-factor authentication and the API token option.
+
 ## 1.3.0 — 2026-11-16
 
 ### Deploy screen
