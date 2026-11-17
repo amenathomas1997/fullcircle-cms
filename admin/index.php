@@ -1242,6 +1242,9 @@ function settings_form(array $errors = [], array $values = []): never
     $secretHint = config()['graph_client_secret'] !== ''
         ? 'A secret is saved. Leave this empty to keep it, or paste a new one to replace it.'
         : 'From Certificates and secrets in your app registration. Copy the secret’s Value, not its ID.';
+    $smtpPasswordHint = (config()['smtp_password'] ?? '') !== ''
+        ? 'A password is saved. Leave this empty to keep it, or type a new one to replace it.'
+        : 'For Gmail and Outlook.com this is an app password, not the password you sign in with.';
 
     $body = '<nav aria-label="On this screen"><ul><li><a href="#site-heading">Site details</a></li><li><a href="#features">Features</a></li><li><a href="#email-settings">Email sending</a></li><li><a href="#assistant-heading">Ask a question assistant</a></li><li><a href="#bookings-heading">Next opening on Book Services</a></li><li><a href="#people-heading">Microsoft 365 sign-in</a></li><li><a href="#password-heading">Change password</a></li></ul></nav>'
 
@@ -1274,17 +1277,26 @@ function settings_form(array $errors = [], array $values = []): never
         . '<button type="submit" class="button">Save features</button></form></section>'
 
         . '<section aria-labelledby="email-heading" id="email-settings"><h2 id="email-heading">Email sending</h2>'
-        . '<p>The contact form, email updates and the monthly link report are sent one of two ways: through the web server’s own mail program (works on most hosts with nothing to set up, '
-        . 'though some hosts need the From address to be a mailbox on the same account), or through Microsoft 365 using an app registration with the <strong>Mail.Send</strong> permission. README.md has the steps for Microsoft 365.</p>'
+        . '<p>The contact form, email updates and the monthly link report are sent one of three ways: through the web server’s own mail program (works on most hosts with nothing to set up, '
+        . 'though some hosts need the From address to be a mailbox on the same account), through an ordinary email account’s SMTP server (Gmail, Outlook.com or a mailbox from your web host), or through Microsoft 365 using an app registration with the <strong>Mail.Send</strong> permission. README.md has the steps for SMTP and Microsoft 365.</p>'
         . '<p>Status: <strong>' . (mail_configured() ? 'Set up' : 'Not set up yet. Messages are saved but not emailed.') . '</strong></p>'
         . '<form method="post" action="' . h(admin_url('settings')) . '#email-settings">' . csrf_field() . '<input type="hidden" name="part" value="email">'
-        . radio_field('mail_method', 'Send email through', ['php' => 'The web server’s own mail program (PHP mail)', 'graph' => 'Microsoft 365 (Microsoft Graph)'], (string) ($c['mail_method'] ?? 'php'))
+        . radio_field('mail_method', 'Send email through', ['php' => 'The web server’s own mail program (PHP mail)', 'smtp' => 'An email account’s SMTP server (Gmail, Outlook.com, your host’s mailbox)', 'graph' => 'Microsoft 365 (Microsoft Graph)'], (string) ($c['mail_method'] ?? 'php'))
         . text_field('mail_from', 'From address (PHP mail)', (string) ($c['mail_from'] ?? ''), ['type' => 'email', 'autocomplete' => 'off', 'error' => $errors['mail_from'] ?? null,
             'hint' => 'For example hello@' . h(site_host()) . '. On cPanel, create this mailbox under Email Accounts first so other mail servers trust it.'])
         . text_field('mail_from_name', 'From name', (string) ($c['mail_from_name'] ?? ''), ['autocomplete' => 'off', 'hint' => 'Leave empty to use the site name.'])
         . text_field('contact_recipients', 'Send messages to', (string) $c['contact_recipients'], ['autocomplete' => 'off', 'error' => $errors['contact_recipients'] ?? null,
             'hint' => 'Where contact form messages and reports go. One or more email addresses, separated by commas.'])
         . text_field('contact_subject', 'Contact form email subject', (string) $c['contact_subject'])
+        . '<h3>SMTP server</h3><p>Only for the SMTP choice. Gmail: smtp.gmail.com, port 587, your Gmail address, and an <strong>app password</strong> (Google Account, Security, 2-Step Verification, App passwords). '
+        . 'Outlook.com: smtp-mail.outlook.com, port 587, your address, and an app password from Microsoft account security. Web host mailboxes: the server name, port and password from your host’s email settings.</p>'
+        . text_field('smtp_host', 'SMTP server name', (string) ($c['smtp_host'] ?? ''), ['spellcheck' => 'false', 'autocomplete' => 'off', 'error' => $errors['smtp_host'] ?? null, 'hint' => 'For example smtp.gmail.com'])
+        . text_field('smtp_port', 'Port', (string) ($c['smtp_port'] ?? '587'), ['type' => 'number', 'inputmode' => 'numeric', 'autocomplete' => 'off', 'error' => $errors['smtp_port'] ?? null,
+            'hint' => '587 for most servers (secured with STARTTLS); 465 for servers that want a TLS connection from the start.'])
+        . text_field('smtp_user', 'User name', (string) ($c['smtp_user'] ?? ''), ['autocomplete' => 'off', 'spellcheck' => 'false', 'error' => $errors['smtp_user'] ?? null, 'hint' => 'Usually the full email address of the account.'])
+        . text_field('smtp_password', 'Password', '', ['type' => 'password', 'autocomplete' => 'off', 'hint' => $smtpPasswordHint])
+        . text_field('smtp_from', 'From address (SMTP)', (string) ($c['smtp_from'] ?? ''), ['type' => 'email', 'autocomplete' => 'off', 'error' => $errors['smtp_from'] ?? null,
+            'hint' => 'Leave empty to send from the user name above. Most servers only allow the account’s own address.'])
         . '<h3>Microsoft 365 app</h3><p>Needed for Microsoft 365 sending, Microsoft Bookings and Microsoft 365 sign-in. Leave empty if you don’t use Microsoft 365.</p>'
         . text_field('graph_tenant_id', 'Directory (tenant) ID', (string) $c['graph_tenant_id'], ['spellcheck' => 'false', 'autocomplete' => 'off', 'error' => $errors['graph_tenant_id'] ?? null,
             'hint' => 'On the Overview page of your app registration.'])
@@ -1384,10 +1396,28 @@ function settings_save(): never
 
     if ($part === 'email') {
         $v = [];
-        foreach (['graph_tenant_id', 'graph_client_id', 'graph_sender', 'contact_recipients', 'contact_subject', 'mail_from', 'mail_from_name'] as $k) {
+        foreach (['graph_tenant_id', 'graph_client_id', 'graph_sender', 'contact_recipients', 'contact_subject', 'mail_from', 'mail_from_name', 'smtp_host', 'smtp_port', 'smtp_user', 'smtp_from'] as $k) {
             $v[$k] = trim((string) ($_POST[$k] ?? ''));
         }
-        $v['mail_method'] = ($_POST['mail_method'] ?? 'php') === 'graph' ? 'graph' : 'php';
+        $v['mail_method'] = in_array($_POST['mail_method'] ?? 'php', ['graph', 'smtp'], true) ? (string) $_POST['mail_method'] : 'php';
+        if ($v['smtp_port'] === '') {
+            $v['smtp_port'] = '587';
+        }
+        if ($v['mail_method'] === 'smtp' && $v['smtp_host'] === '') {
+            $errors['smtp_host'] = 'Enter the SMTP server name, for example smtp.gmail.com.';
+        }
+        if ($v['smtp_host'] !== '' && !preg_match('/^[a-z0-9.-]+$/i', $v['smtp_host'])) {
+            $errors['smtp_host'] = 'Enter only the server name, like smtp.gmail.com, without http:// or a port.';
+        }
+        if (!ctype_digit($v['smtp_port']) || (int) $v['smtp_port'] < 1 || (int) $v['smtp_port'] > 65535) {
+            $errors['smtp_port'] = 'Enter the port as a number, usually 587 or 465.';
+        }
+        if ($v['smtp_from'] !== '' && !filter_var($v['smtp_from'], FILTER_VALIDATE_EMAIL)) {
+            $errors['smtp_from'] = 'Enter the From address as an email address.';
+        }
+        if ($v['mail_method'] === 'smtp' && $v['smtp_from'] === '' && !filter_var($v['smtp_user'], FILTER_VALIDATE_EMAIL)) {
+            $errors[$v['smtp_user'] === '' ? 'smtp_user' : 'smtp_from'] = $v['smtp_user'] === '' ? 'Enter the email account’s user name.' : 'The user name isn’t an email address, so enter the From address too.';
+        }
         if ($v['mail_method'] === 'php' && $v['mail_from'] !== '' && !filter_var($v['mail_from'], FILTER_VALIDATE_EMAIL)) {
             $errors['mail_from'] = 'Enter the From address as an email address.';
         }
@@ -1421,12 +1451,15 @@ function settings_save(): never
         if ($secret !== '') {
             $v['graph_client_secret'] = $secret;
         }
+        if (($_POST['smtp_password'] ?? '') !== '') {
+            $v['smtp_password'] = (string) $_POST['smtp_password'];
+        }
         save_config($v);
         @unlink(DATA_DIR . '/graph-token.php');
 
         if (($_POST['then'] ?? '') === 'test') {
             try {
-                send_mail_owner('Test email from your website', '<p>This test email shows that your website can send email' . (mail_method() === 'graph' ? ' through Microsoft 365.' : ' through the server’s mail program.') . '</p>');
+                send_mail_owner('Test email from your website', '<p>This test email shows that your website can send email' . match (mail_method()) { 'graph' => ' through Microsoft 365.', 'smtp' => ' through the SMTP server ' . h((string) config()['smtp_host']) . '.', default => ' through the server’s mail program.' } . '</p>');
                 flash('Saved. A test email was sent to ' . config()['contact_recipients'] . '. Check that inbox to make sure it arrived.');
             } catch (Throwable $e) {
                 flash('Your settings were saved, but the test email could not be sent. ' . $e->getMessage(), 'error');
