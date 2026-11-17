@@ -9,8 +9,8 @@ if ($path === '/admin' || str_starts_with($path, '/admin/')) {
     if (is_file(__DIR__ . $path) && !str_ends_with($path, '.php')) {
         return false;
     }
-    if ($path === '/admin/oauth.php') {
-        require __DIR__ . '/admin/oauth.php';
+    if ($path === '/admin/oauth.php' || $path === '/admin/calendar-oauth.php') {
+        require __DIR__ . $path;
         return true;
     }
     require __DIR__ . '/admin/index.php';

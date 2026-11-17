@@ -1,0 +1,54 @@
+name: Checks
+
+# Every push and pull request: syntax on the PHP versions the kit supports, the kit's own
+# self-test, and a throwaway site set up from scratch and crawled (public pages and every
+# control panel screen) so a broken screen is caught before it reaches a client's site.
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  test:
+    name: PHP ${{ matrix.php }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        php: ['8.1', '8.3']
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: ${{ matrix.php }}
+          extensions: curl, dom, simplexml, mbstring, openssl, intl, zip
+          coverage: none
+
+      - name: Self-test (syntax, bootstrap, registry, appointment engine)
+        run: php tools/selftest.php
+
+      - name: Set up a throwaway site
+        env:
+          SETUP_SITE_NAME: CI Test Site
+          SETUP_SITE_URL: http://localhost:8000
+          SETUP_EMAIL: owner@example.com
+          SETUP_PHONE: 555-010-0100
+          SETUP_TIMEZONE: America/Chicago
+          SETUP_OWNER_NAME: CI Owner
+          SETUP_PASSWORD: ci-test-password-${{ github.run_id }}
+          SETUP_SPANISH: 'yes'
+        run: |
+          php tools/setup.php --yes
+          php -S localhost:8000 router.php > php-server.log 2>&1 &
+          for i in $(seq 1 20); do curl -fs -o /dev/null http://localhost:8000/ && break; sleep 0.5; done
+
+      - name: Crawl the site and the control panel
+        run: php tools/selftest.php --site http://localhost:8000 --email owner@example.com --password "ci-test-password-${{ github.run_id }}"
+
+      - name: Server log
+        if: always()
+        run: |
+          echo "::group::php -S log"; cat php-server.log || true; echo "::endgroup::"
+          if grep -E "PHP (Warning|Fatal|Notice|Deprecated)" php-server.log; then echo "PHP problems in the server log"; exit 1; fi
