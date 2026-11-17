@@ -2,6 +2,28 @@
 
 Every release of the kit is listed here, newest first. `php tools/update.php` prints the entries that are new since the version a site has installed.
 
+## 1.2.0 — 2026-11-16
+
+### Pages
+
+- Nested pages: a "Parent page" list on the page form puts a page inside another, up to three levels (`/services/reiki/pricing/`). The Pages screen shows the tree with "Level 2:" and "Level 3:" read before nested titles; visitors get a "You are here" breadcrumb trail (with BreadcrumbList structured data) and the parent's menu item marked as the current section. Addresses are built with `page_path()`; a page opened by its bare name or an old address is redirected (301) to its real one. Renaming or moving carries the children along and updates menu links; deleting asks whether the children move up a level or go too.
+
+### Languages
+
+- Any second language, not only Spanish: Settings, Site details, Languages has "Language the site is written in" and "Second language" (`primary_language`, `second_language`; fifteen codes in `SUPPORTED_LANGUAGES`). Choosing a language turns its pages on; "None" turns them off and keeps the pages. The Features switch reads "Second language pages (French)" and does the same thing. `tools/setup.php` takes `SETUP_PRIMARY_LANGUAGE` and `SETUP_SECOND_LANGUAGE` (`SETUP_SPANISH=yes` still means `es`), and the first-run screen offers the list.
+- The language's code is the prefix everywhere Spanish used `es` (`fr-contact` at `/fr/contact/`, `/fr/blog/`); built-in address words come from `route_search`, `route_resources`, `route_events` and `route_contact`, with the English words as the fallback. Arabic pages get `dir="rtl"`. Sites from before the choice keep working as Spanish sites with nothing to migrate.
+- The site's own words come from `lib/languages/<code>.php` (English and Spanish complete, English the fallback) and a site's `content/languages/<code>.json`, edited on the new Translations screen (owner): one row per English key, a filter, one Save. Starter content for a language other than Spanish is English with a "waiting to be translated" note.
+
+### Importing
+
+- An Import screen (owner) brings an old website in as drafts three ways: a WordPress export file (WXR up to 64 MB, read with `XMLReader`; pages with their parent, posts with date, categories and excerpt, media downloaded from the old site), a zip of HTML files (Google Sites Takeout or any folder; folders become parent pages), or a live address crawled breadth first up to 60 pages. A preview comes first, nothing goes live, existing addresses are never overwritten, and the report lists created, skipped and notes with Edit links and an "Add redirects for N old addresses" button. Media (15 MB each) lands under `uploads/import/`; every import is logged to `data/imports/` and the Activity log; `set_time_limit(600)` for the crawl and the import. `import_clean_html()` has its own tests (`php lib/features/importers.php --test`).
+
+### Control panel
+
+- The control panel menu is read as four named groups, Content, People and messages, Checks and tools, and Site, instead of one list of thirty links. Screens a feature registers join Content unless named in another group.
+- The Settings screen's "On this screen" navigation is generated from the level 2 headings actually present, so sections features add or remove appear and disappear with them.
+- The guides: nested pages, languages and importing are documented in OWNER-GUIDE.md and README.md; the separate docs files are gone.
+
 ## 1.1.0 — 2026-11-16
 
 ### Sign-in and people

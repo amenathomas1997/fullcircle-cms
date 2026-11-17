@@ -6,7 +6,8 @@ Full Circle CMS is a small website system written in plain PHP. There is no data
 
 Always on:
 
-- Pages and blog posts, each with a choice of three editors: visual (TinyMCE 7), Blocks (every paragraph, heading, list, image and whole section is a labelled form field, built for JAWS, NVDA and VoiceOver) and plain HTML; earlier versions kept (25 per item), a preview before saving, and an accessibility check on every save.
+- Pages and blog posts, each with a choice of three editors: visual (TinyMCE 7), Blocks (every paragraph, heading, list, image and whole section is a labelled form field, built for JAWS, NVDA and VoiceOver) and plain HTML; earlier versions kept (25 per item), a preview before saving, and an accessibility check on every save. Pages can sit inside other pages, three levels deep, with breadcrumbs.
+- An Import screen that brings an old website in as drafts: a WordPress export file, a zip of HTML files, or a live address that is crawled.
 - Blog with drafts, scheduled posts, topics, reading time, related posts, an RSS feed, and an audio version per post with a podcast feed. Pages can be scheduled too, and any page or post can be shared before it is live with a review link.
 - Named accounts with three roles (owner, editor, author), optional two-factor sign-in, "Forgot your password?" by email, a People screen and an Activity log.
 - A contact form (`[contact-form]`) that saves every message in the control panel and emails it to you.
@@ -27,13 +28,13 @@ Optional, each with a switch in Settings, then Features:
 - Success stories (off): stories at `/success-stories/` with a consent check.
 - Ask a question, Claude (off): `[ask-assistant]` answers visitors' questions from the site's own content. Needs an Anthropic API key and Composer.
 - Microsoft Bookings next opening (off): `[next-opening]` shows the next free slot in a Bookings calendar.
-- Spanish pages (off): a Spanish side of the site at `/es/`, with its own menu, footer, blog, events list and a language switch.
+- Second language pages (off): a second side of the site in any of fifteen languages, Spanish at `/es/` for example, with its own menu, footer, blog, search, events list and a language switch, plus a Translations screen for the site's own words. See Languages below.
 
 Turning a feature off hides its pages, screens and shortcodes. Nothing is deleted.
 
 ## Requirements
 
-- PHP 8.1 or later with the `curl`, `fileinfo`, `mbstring`, `json`, `dom` and `zip` extensions (all standard on cPanel).
+- PHP 8.1 or later with the `curl`, `fileinfo`, `mbstring`, `json`, `dom`, `xmlreader` and `zip` extensions (all standard on cPanel).
 - Apache or LiteSpeed with `mod_rewrite` and `.htaccess` files allowed. A cPanel-style account whose web folder is `public_html` fits the tools best.
 - SSH access with git for creating sites, updating them and cron jobs. Web-only setup is possible too (see below), but updates arrive through git.
 - Composer, only if you turn on the Ask a question assistant or want alt-text suggestions: run `composer install --no-dev` in the site folder (it installs the Anthropic PHP SDK into `vendor/`).
@@ -44,7 +45,7 @@ Turning a feature off hides its pages, screens and shortcodes. Nothing is delete
 php -S localhost:8000 router.php
 ```
 
-Open http://localhost:8000/admin/. Because the request comes from the same computer, the first-run screen appears without a set-up code. Fill in the site name, address, optional contact email, whether to add Spanish pages, your name, your sign-in email address and a password of at least 12 characters, then choose "Create my site". You are signed in as the owner and taken to Settings.
+Open http://localhost:8000/admin/. Because the request comes from the same computer, the first-run screen appears without a set-up code. Fill in the site name, address, optional contact email, an optional second language, your name, your sign-in email address and a password of at least 12 characters, then choose "Create my site". You are signed in as the owner and taken to Settings.
 
 ## Create a new site from the kit
 
@@ -65,7 +66,7 @@ If a site was installed by copying files, turn it into a clone without losing an
 ### On the server, over SSH
 
 1. In the website folder, run `php tools/setup.php`.
-2. Answer the questions: site name, legal name, tagline, site address, contact email, phone, time zone, color set, Spanish pages yes or no, then the owner account: your name, your sign-in email address and a password of at least 12 characters, typed twice.
+2. Answer the questions: site name, legal name, tagline, site address, contact email, phone, time zone, color set, the language the site is written in, Spanish pages yes or no (or a different second language's code), then the owner account: your name, your sign-in email address and a password of at least 12 characters, typed twice.
 3. Sign in at `https://your-domain/admin/` with that email address and password.
 
 Every answer can be given as an environment variable instead, and `php tools/setup.php --yes` accepts the defaults for anything not given, so the whole thing can run without a keyboard:
@@ -77,7 +78,8 @@ Every answer can be given as an environment variable instead, and `php tools/set
 - `SETUP_EMAIL` and `SETUP_PHONE`
 - `SETUP_TIMEZONE` (default `America/New_York`)
 - `SETUP_PALETTE`: `purple`, `blue`, `green`, `teal`, `rust` or `charcoal`
-- `SETUP_SPANISH=yes`
+- `SETUP_PRIMARY_LANGUAGE` (default `en`; any code from the Languages section)
+- `SETUP_SECOND_LANGUAGE` (a code such as `es` or `fr`; empty for none). `SETUP_SPANISH=yes` is the older shorthand for `es`.
 - `SETUP_OWNER_NAME` (default "Site owner")
 - `SETUP_OWNER_EMAIL` (default: `SETUP_EMAIL`)
 - `SETUP_PASSWORD` (12 characters or more)
@@ -94,16 +96,16 @@ The script refuses to run on a site that already has an owner account and pages.
 
 1. Put the files in place (a git clone is still best).
 2. Create a file `data/setup-code.txt` containing any code of 12 or more characters. This stops a stranger who finds `/admin/` first from claiming the site.
-3. Open `https://your-domain/admin/`. The first-run form asks for the one-time code, site name, site address, public contact email (optional), Spanish pages (tick box), your name, your sign-in email address and the password twice.
+3. Open `https://your-domain/admin/`. The first-run form asks for the one-time code, site name, site address, public contact email (optional), a second language (a drop-down, "None, English only" by default), your name, your sign-in email address and the password twice.
 4. Choose "Create my site". The code file is deleted and you are signed in as the owner.
 
 Without the code file the screen explains both options and waits.
 
 ### What setup creates
 
-- Pages: Home (a hero, a features list and a call to action, all editable as blocks), About, Contact us (with `[contact-form]`), Accessibility statement and Privacy, all published. With Spanish turned on, the same five in Spanish, linked as translations.
+- Pages: Home (a hero, a features list and a call to action, all editable as blocks), About, Contact us (with `[contact-form]`), Accessibility statement and Privacy, all published. With a second language chosen, the same five again, linked as translations: written in Spanish for `es`, and for any other language in English with a note at the top saying the page is waiting to be translated (nothing is machine translated).
 - A first blog post, published now.
-- The main menu: Home, About, Blog, Contact (and a Spanish menu when Spanish is on), and footer link groups with your contact details.
+- The main menu: Home, About, Blog, Contact (and a second-language menu when one is chosen), and footer link groups with your contact details.
 - Settings: the features at their defaults and contact page addresses; `data/config.php` with "Send messages to" set to the contact email; `data/users.json` with the owner account.
 - Empty folders `data/cache`, `data/stats` and `uploads/audio`.
 
@@ -135,11 +137,11 @@ Resetting a password signs that person out everywhere and clears the sign-in loc
 
 ## Settings walk-through
 
-Settings has an "On this screen" navigation at the top with one link per section.
+Settings has an "On this screen" navigation at the top, built from the level 2 headings that are actually on the screen, so a section a feature adds or removes shows up in the list on its own.
 
-**Site details.** Site name, tagline, site description, site address (used for every absolute link and for the Microsoft sign-in redirect), mailing address for email updates (required by CAN-SPAM), and blog posts per page. Under "Contact details": full or legal name, public contact email, public phone number and the contact page address (plus a Spanish one). Under "Look and time": the time zone, the color set (Purple, Blue, Green, Teal, Rust red, Charcoal, each checked for WCAG AA contrast) and the logo (an image from Images and files, or none).
+**Site details.** Site name, tagline, site description, site address (used for every absolute link and for the Microsoft sign-in redirect), mailing address for email updates (required by CAN-SPAM), and blog posts per page. Under "Contact details": full or legal name, public contact email, public phone number and the contact page address (plus the second language's when one is on). Under "Languages": the language the site is written in and the second language (see Languages below). Under "Look and time": the time zone, the color set (Purple, Blue, Green, Teal, Rust red, Charcoal, each checked for WCAG AA contrast) and the logo (an image from Images and files, or none).
 
-**Features.** One tick box per optional feature, described above, including Forms, Events and Payments.
+**Features.** One tick box per optional feature, described above, including Forms, Events and Payments. "Second language pages (Spanish)" names whichever language is chosen and is the same switch as the Second language drop-down.
 
 **Email sending.** "Send email through": PHP mail, an email account's SMTP server, or Microsoft 365 (see Email below), plus the From address and name (PHP mail), the SMTP server fields, the Microsoft 365 app details, "Send messages to" (one or more addresses for contact messages, form answers, orders and reports) and the contact email subject. "Save and send a test email" sends to the "Send messages to" addresses. The dashboard shows a warning until this section is complete.
 
@@ -215,6 +217,28 @@ Always on (`lib/features/redirects.php`, `admin/redirects.php`). `data/redirects
 Review links (`lib/features/review-links.php`) live in `data/review-links.json` (mode 600) as `token => {type, slug, created_by, created, expires}`, 32 hex characters each, 7 days by default and 1 to 30 selectable. The public route `/review/<token>/` renders the real page in the real layout with a banner, `Cache-Control: no-store` and `X-Robots-Tag: noindex`. Expired, revoked or unknown tokens get a 410 page. Deleting the page or post removes its links; a daily cron job prunes old entries.
 
 Scheduled pages (`lib/features/scheduled-pages.php`): a page may carry `publish_at` (site time zone). `page_is_live()` hides a published page whose time has not come from visitors, the sitemap and the Pages list status ("Scheduled"), while signed-in users and review links still see it.
+
+## Nested pages
+
+`lib/features/nested-pages.php`, with small hooks in `index.php`, `lib/i18n.php` (`page_path()`) and `admin/index.php`. A page's JSON gains an optional `"parent": "<slug>"`; the slug stays unique site-wide, so file names and `get_item('pages', $slug)` are unchanged, and two pages cannot both be called `pricing` even under different parents. A page's address is its parent's address plus its own segment: `/services/`, `/services/reiki/`, `/services/reiki/pricing/`. `PAGE_MAX_LEVEL` caps the tree at three levels; the Parent page list leaves out any page that would take a family past that, and a parent that is missing, is the page itself, is in the other language, is `home` or the second-language home, or forms a loop is ignored. Second-language pages nest only inside second-language pages and keep their `/es/` prefix.
+
+Routing: registered feature routes answer first, then `page_by_path()` is tried for any address (and inside the second-language block); if nothing is found but `page_at_wrong_path()` names a page by its last segment (`/pricing/`, or an old address after a move), the visitor gets a 301 to `page_path()` of that page. One-segment addresses then fall through to `show_page()` as before, so unknown addresses still 404. `breadcrumbs_html()` prints `<nav aria-label="You are here"><ol class="breadcrumbs">` above the heading and adds BreadcrumbList structured data. Renaming or moving a page carries its children along and `menu_follow_moves()` updates menu links; deleting one asks whether the children move up a level or go too. Always build page addresses with `page_path($slug)`, never `"/$slug/"`. Styles: `.breadcrumbs` in `assets/css/site.css`, `.tree-level-2` and `.tree-level-3` in `admin/admin.css`.
+
+## Languages
+
+A site is written in one primary language (`primary_language` in `content/settings.json`, default `en`) and can have one second language (`second_language`, a code or empty). Everything is in `lib/i18n.php`; nothing else in the kit needs to know which languages a site uses. The codes a site can choose, with the names visitors see, are in `SUPPORTED_LANGUAGES`: `en` English, `es` Español, `fr` Français, `de` Deutsch, `it` Italiano, `pt` Português, `nl` Nederlands, `pl` Polski, `ar` العربية, `zh` 中文, `ja` 日本語, `ko` 한국어, `hi` हिन्दी, `vi` Tiếng Việt, `tl` Tagalog. Every page gets `lang` from its language; languages in `RTL_LANGUAGES` (Arabic) get `dir="rtl"` on `<html>` through `html_dir()`.
+
+Choosing a second language in Settings (or on the first run, or with `SETUP_SECOND_LANGUAGE`) turns its pages on; choosing None turns them off but keeps the pages and the code. It is the same switch as "Second language pages" under Features, stored as `features.spanish` (a historical name). Sites from before the choice existed have `features.spanish` on and no `second_language`: they stay Spanish (`LEGACY_SECOND_LANGUAGE`) and nothing needs migrating. The settings keys `menu_es`, `footer_html_es`, `footer_groups_es` and `contact_page_es` hold the second language's menu, footers and contact page whatever its code.
+
+**Addresses and file names.** The second language's code is the prefix everywhere Spanish used `es`: the home page is the file `<code>` at `/<code>/`; a page `<code>-contact` is at `/<code>/contact/`; a post `<code>-bonjour` is at `/<code>/blog/bonjour/`; the blog list and feed are `/<code>/blog/` and `/<code>/blog/feed.xml`. The words in the built-in addresses for search, the cheat sheets list, events and the contact page come from the language's strings `route_search`, `route_resources`, `route_events` and `route_contact` (`buscar`, `guias-rapidas`, `eventos`, `contacto` in Spanish); a language without them uses the English words, so French search is at `/fr/search/` until someone translates `route_search`. The primary language's addresses are always the English words. Cheat sheets themselves stay at `/resources/<slug>/`.
+
+**The site's own words** (labels, buttons, headings, messages, not page content) come from two layers: `lib/languages/<code>.php` returns the array for a language (`en.php` is complete and is the fallback for every other language; `es.php` is complete too; other languages have no file yet, so visitors see English until a translation exists; to add one to the kit, copy `en.php` to `<code>.php` and translate the values), and `content/languages/<code>.json` holds one site's own words for a language on top of the shipped file. The Translations screen (owner, under Checks and tools) edits that JSON: one row per English key, a filter box, one Save for all rows; it covers every language in use other than English. In code: `t('key')` in the current language with English then the key itself as fallbacks, `t_in('es', 'key')` for a given language (emails, documents), `strings('es')` for the whole array; `date_long` with `month_1` to `month_12` orders dates. For feature code: never compare with `'es'` or write `/es/`; use `is_second_lang()`, `second_lang()`, `home_path()`, `lang_route_path()`, and `language_english_name()` or `second_lang_name()` to name the language in the control panel. `create_starter_content(string $second = '')` writes Spanish starter pages for `es` and English pages with a "waiting to be translated" note for any other code.
+
+## Importers
+
+The Import screen (owner, under Checks and tools; `admin/importers.php`, with everything it does in `lib/features/importers.php`) brings an old website in as drafts, three ways: a WordPress export file (WXR, read with `XMLReader` one item at a time: pages with their parent, posts with date, categories and excerpt, attachments and any media the content refers to, downloaded from the old site; trashed items, revisions, menus, custom post types, tags, featured images and the logo are left out and shortcodes are left as text), a zip of HTML files (a Google Sites Takeout or any folder: `<title>` or first `<h1>`, the `<main>`/`<article>`/`[role=main]` or the wrapper with most words, `folder/index.html` becoming the folder's page and its siblings' parent, the root `index.html` saved as the draft `imported-home`), or a live address (same-host links followed breadth first). Every import is a preview first and the real thing on confirm; nothing goes live, an address already in use is skipped rather than overwritten, and the report lists created, skipped and notes with an Edit link per draft and an "Add redirects for N old addresses" button that writes 301s through the Redirects feature. Each item carries `imported_from`.
+
+Limits, from the constants at the top of `lib/features/importers.php`: uploads 64 MB (`IMPORT_UPLOAD_MAX`, further limited by PHP's `upload_max_filesize` and `post_max_size`, which `.user.ini` sets to 64 MB; the screen shows the working limit); media 15 MB per file (`IMPORT_MEDIA_MAX`; JPEG, PNG, GIF, WebP, PDF, DOCX, MP3, M4A, bytes checked against the extension) fetched with curl in 20 seconds each (`IMPORT_FETCH_TIMEOUT`); crawls stop at 60 pages (`IMPORT_CRAWL_MAX`) with a half-second pause between fetches. Both the preview and the import run in the foreground under `set_time_limit(600)`; a host that cuts execution at the web server (FastCGI timeouts) may stop a very large import short, in which case the report says so and lists what was created up to then. Media lands under `uploads/import/<YYYY>/<MM>/`; work in progress waits in `data/imports/work/<token>/` (cleaned after a day, `IMPORT_WORK_KEEP`); every finished import is logged to `data/imports/<date>_<time>-<id>.json` and the screen shows the last five. `curl` and the `xmlreader`, `zip` and `dom` extensions are needed. The HTML cleaner `import_clean_html()` is standalone and has tests: `php lib/features/importers.php --test`.
 
 ## Alt text and the accessibility check
 
@@ -296,14 +320,14 @@ RewriteRule ^ - [L]
 - `router.php`: only for `php -S` on your computer.
 - `.htaccess`, `.user.ini`: Apache rules and PHP upload limits (64 MB).
 - `VERSION`, `CHANGELOG.md`: the version and what changed.
-- `admin/`: the control panel (`index.php`, `oauth.php`, `admin-lib.php`, `features.php`, `accounts.php`, `people.php`, `ops.php`, `payments.php`, `redirects.php`, CSS and JS, `admin/vendor/tinymce/`).
-- `lib/`: core (settings, items, revisions, registry, version), mail, Graph, contact, blog, resources, braille, docx, quiz, search, stats, subscribers, bookings, assistant, link check, shortcodes, starter pages; `lib/features/`: accounts, a11y-check, alt-text, events, footer, forms, ops, payments, redirects, review-links, scheduled-pages.
+- `admin/`: the control panel (`index.php`, `oauth.php`, `admin-lib.php`, `features.php`, `accounts.php`, `people.php`, `ops.php`, `payments.php`, `redirects.php`, `importers.php`, CSS and JS, `admin/vendor/tinymce/`).
+- `lib/`: core (settings, items, revisions, registry, version), `i18n.php` and `lib/languages/<code>.php`, mail, Graph, contact, blog, resources, braille, docx, quiz, search, stats, subscribers, bookings, assistant, link check, shortcodes, starter pages; `lib/features/`: accounts, a11y-check, alt-text, events, footer, forms, importers, nested-pages, ops, payments, redirects, review-links, scheduled-pages, translations.
 - `site/`: this one site's own PHP additions (empty in the kit).
 - `tools/`: `setup.php`, `set-password.php`, `update.php`, `migrations/`, `deploy.sh`, `backup.sh`, `restore.sh`, `check-links.php`, `send-updates.php`.
 - `assets/`: stylesheet, self-hosted font, site script. The stylesheet is edited in the control panel.
-- `content/`: `layout.html`, `settings.json`, `pages/`, `posts/`, `resources/`, `videos/`, `stories/`, `testimonials/`, `forms/`, `events/`, `products/`, `update-archive/`, `revisions/`.
-- `data/`: `config.php` (secrets), `users.json`, `activity.jsonl`, `messages/`, `forms/`, `orders/`, `subscribers.json`, `outbox/`, `stats/`, `cache/`, redirects, 404s, review links, alt text, fleet and update status, migrations, link and health reports.
-- `uploads/`: files from Images and files, in `YYYY/MM/` folders, plus `uploads/audio/`.
+- `content/`: `layout.html`, `settings.json`, `pages/`, `posts/`, `resources/`, `videos/`, `stories/`, `testimonials/`, `forms/`, `events/`, `products/`, `update-archive/`, `revisions/`, `languages/` (a site's own translations).
+- `data/`: `config.php` (secrets), `users.json`, `activity.jsonl`, `messages/`, `forms/`, `orders/`, `imports/`, `subscribers.json`, `outbox/`, `stats/`, `cache/`, redirects, 404s, review links, alt text, fleet and update status, migrations, link and health reports.
+- `uploads/`: files from Images and files, in `YYYY/MM/` folders, plus `uploads/audio/` and `uploads/import/`.
 - `vendor/`: Composer packages for the assistant and alt text.
 
 ## Security notes
@@ -317,7 +341,7 @@ RewriteRule ^ - [L]
 
 ## Accessibility notes
 
-Every public page has a skip link to `main`, landmark regions (header, navigation labelled "Main", main, footer), exactly one `h1`, `aria-current` on the current menu item, a language switch with `lang` and `hreflang` when Spanish is on, visible focus styles, and no motion or autoplay. Form results move focus to a status message. The site uses a self-hosted font and no third-party scripts. The Display options button in the header opens a panel with Text size (Standard, Large, Extra large) and Colors (Match my device, Light, Dark, High contrast yellow on black), with Reset and Close buttons; Escape closes it and the choice is stored in `localStorage` only. Cheat sheets download as Word, 24-point Word and braille (uncontracted UEB, 40 by 25). The control panel has the same skip link and landmarks, visible labels on every field, hints and errors tied with `aria-describedby`, an error summary that moves focus and links to each field, status messages that take focus, and an "On this screen" navigation on long screens. The accessibility check warns the author after every save about missing alt text, heading problems, weak link text, tables without headers, untitled frames, all-capitals text and very long paragraphs.
+Every public page has a skip link to `main`, landmark regions (header, navigation labelled "Main", main, footer), exactly one `h1`, `aria-current` on the current menu item (and on the section's item for pages nested inside it), a "You are here" breadcrumb navigation on nested pages, a language switch with `lang` and `hreflang` when a second language is on, `dir="rtl"` for right-to-left languages, visible focus styles, and no motion or autoplay. Form results move focus to a status message. The site uses a self-hosted font and no third-party scripts. The Display options button in the header opens a panel with Text size (Standard, Large, Extra large) and Colors (Match my device, Light, Dark, High contrast yellow on black), with Reset and Close buttons; Escape closes it and the choice is stored in `localStorage` only. Cheat sheets download as Word, 24-point Word and braille (uncontracted UEB, 40 by 25). The control panel has the same skip link and landmarks, visible labels on every field, hints and errors tied with `aria-describedby`, an error summary that moves focus and links to each field, status messages that take focus, and an "On this screen" navigation on long screens. The accessibility check warns the author after every save about missing alt text, heading problems, weak link text, tables without headers, untitled frames, all-capitals text and very long paragraphs.
 
 ## Checklist for a new client site
 
@@ -326,12 +350,12 @@ Every public page has a skip link to `main`, landmark regions (header, navigatio
 3. If the assistant or alt-text help will be used: `composer install --no-dev`.
 4. Add the three cron lines (email updates, hourly health and link check, nightly backup). If the default backup folder does not suit the host, set `backup_dir` in `data/config.php`.
 5. Sign in at `/admin/` as the owner. Under Settings, Email sending, choose PHP mail, SMTP or Microsoft 365, fill it in and send a test email. Password links, form answers and order notices depend on it.
-6. Under Settings, Features, turn on what the client needs (Events, Payments, Videos, Spanish and so on).
+6. Under Settings, Features, turn on what the client needs (Events, Payments, Videos and so on), and under Site details, Languages, choose the second language if there is one. For a language other than Spanish, fill in the Translations screen.
 7. If Payments is on: Stripe test key, currency, thank-you message, webhook, a test payment with 4242 4242 4242 4242, then the live key and live webhook.
 8. If Microsoft 365 sign-in is wanted: the app registration's redirect URI, then tick the switch; the people's accounts must use their Microsoft 365 addresses.
 9. For the assistant or alt text: paste the Anthropic API key under Ask a question assistant.
 10. Invite the client's people on the People screen with the right roles, and walk the owner through My account and two-factor sign-in.
-11. Fill in the Footer screen, the home page blocks, the About and Contact pages, and any pages the shortcodes need (Updates, Testimonials, forms, events, products).
+11. Fill in the Footer screen, the home page blocks, the About and Contact pages, and any pages the shortcodes need (Updates, Testimonials, forms, events, products). If the client has an old website, bring it in from the Import screen (WordPress export, zip of HTML, or the live address) and add the redirects the report offers.
 12. Check the Dashboard for warnings, the Accessibility screen for warnings, and the Link check screen after the first run.
 13. If you run several sites: on each site, "Make a key for this site" under Sites, and list the others on your own site's Sites screen.
 14. Write the host's name and contact details at the end of OWNER-GUIDE.md and hand it over.

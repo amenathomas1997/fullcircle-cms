@@ -6,13 +6,13 @@ This guide is for the person who looks after the website day to day. It assumes 
 
 The control panel is at your website address followed by `/admin/`, for example `https://example.com/admin/`.
 
-- Every screen starts with a "Skip to main content" link, then a banner with the site name, then a navigation region called "Control panel" that lists the screens you can open in four named groups: Content (Dashboard, Pages, Blog posts, Images and files, Menu, Footer, Events, Forms, Products and so on), People and messages (Messages, Email updates, Orders, People, Activity, My account), Checks and tools (Visitors, Link check, Accessibility, Redirects, System, Sites, Backups) and Site (Site template, Settings). The main region holds the screen's heading (the only level 1 heading) and its content.
-- Long screens such as Settings and Site template start with a navigation region called "On this screen", with a link to each section. Sections are level 2 headings, so you can also jump with your heading key.
+- Every screen starts with a "Skip to main content" link, then a banner with the site name, then a navigation region called "Control panel" that lists the screens you can open in four named groups: Content (Dashboard, Pages, Blog posts, Images and files, Menu, Footer, Events, Forms, Products and so on), People and messages (Messages, Email updates, Orders, People, Activity, My account), Checks and tools (Visitors, Link check, Accessibility, Redirects, Import, Translations, System, Sites, Backups) and Site (Site template, Settings). The main region holds the screen's heading (the only level 1 heading) and its content.
+- Long screens such as Settings and Site template start with a navigation region called "On this screen", with a link to each section. On Settings the list is made from the sections that are actually there, so it changes when a feature is turned on or off. Sections are level 2 headings, so you can also jump with your heading key.
 - After you save, a message appears at the top and focus moves to it, so you hear it straight away.
 - If a form has a problem, nothing is saved. A box headed "There is a problem" (or "There are 3 problems") takes focus and lists each problem as a link. Press Enter on a link and you land on the field that needs fixing. The field itself is marked invalid and repeats the message.
 - Every field has a visible label. Hints are read after the label.
 - Tables have captions and row headings, and every Edit, View and Delete link says which item it belongs to, so you can read links out of context.
-- The footer of every screen says which version of the kit the site runs, for example "Full Circle CMS 1.1.0".
+- The footer of every screen says which version of the kit the site runs, for example "Full Circle CMS 1.2.0".
 
 ## Accounts and roles
 
@@ -168,12 +168,27 @@ On the Pages screen, the table lists every page with Edit, View and Delete links
 
 - "Page title" is the browser tab title and, unless you tick "Don't show the page title as a heading", the page's main heading.
 - "Page address" is the part after your domain. Changing it breaks old links; add a redirect if you do (see Redirects below).
+- "Parent page", under the address, puts this page inside another one (see "Pages inside other pages" below). Leave it as "None" for an ordinary top-level page.
 - The content has the same Editor switch as posts: Visual, Blocks or HTML. Pages start in HTML. In HTML, use `<h2>` for section headings and `<p>` for paragraphs. Type `[contact-form]` where the contact form should appear; other shortcodes are listed in README.md and on the Forms, Events and Products screens.
-- "Same page in Spanish" links a translation when Spanish pages are on.
+- "Same page in Spanish" (or whichever second language the site has) links a translation when second language pages are on.
 - "Search engine description" is one or two sentences for search results.
 - Status: published or draft.
 
 Save with "Save page", "Save and view page" or Command+S / Control+S. "Preview without saving" opens a new tab. "More options" has the earlier versions and delete links. The home page cannot be deleted.
+
+### Pages inside other pages
+
+A page can live inside another: Services at `/services/`, Reiki inside it at `/services/reiki/`, and Pricing inside that at `/services/reiki/pricing/`. Three levels is the limit.
+
+1. Open the page and go to the "Parent page" list under the address. Each choice reads out the address the page would get, for example "Services (/services/)". Pages that can't be chosen (the page itself, the pages inside it, pages in the other language, and anything that would go past three levels) are simply not in the list.
+2. Save. The page's address becomes its parent's address plus its own name, and old links to the page still work: anyone who opens the old address is sent to the new one.
+
+- The **Pages** screen shows the family as a tree: a page inside another is listed under its parent, and you hear "Level 2:" or "Level 3:" before its title.
+- Visitors see a "You are here" trail above the heading of a nested page, for example Home, Services, Reiki, Pricing, each a link. It is a navigation region, so you can jump to it. On second-language pages the trail is in that language.
+- A page's own name stays unique across the site, so two pages can't both be called `pricing`, even under different parents.
+- Renaming or moving a page carries the pages inside it along, and menu links to any address that changed are updated for you.
+- Deleting a page that has pages inside it asks "What should happen to the pages inside it?": move them up a level (the usual choice: they take the deleted page's place and their addresses change) or delete them too. Either way a copy of every deleted page is kept under Earlier versions.
+- Menus are unchanged: link to the full address, such as `/services/reiki/`. A menu item for `/services/` is announced as current on every page inside it.
 
 ### Scheduling a page
 
@@ -195,7 +210,7 @@ When you create a new page, tick "Add this page to the main menu" before saving 
 
 ## The Menu screen
 
-The screen starts with a small navigation, "Which menu", to switch between the English menu and the Spanish menu. Each menu item is a group announced as "Menu item 2 of 4: About", with "Link text" and "Link address" fields and buttons "Move up", "Move down" and "Remove". Moving or removing saves straight away and announces the new position. Editing text or addresses needs the "Save menu" button.
+When the site has a second language, the screen starts with a small navigation, "Which menu", to switch between the English menu and the second language's menu ("Spanish menu", for example). Each menu item is a group announced as "Menu item 2 of 4: About", with "Link text" and "Link address" fields and buttons "Move up", "Move down" and "Remove". Moving or removing saves straight away and announces the new position. Editing text or addresses needs the "Save menu" button.
 
 Under "Add a link", either pick one of your pages from "Link to one of your pages" (or Blog) and activate "Add to menu", or type a Link text and a Link address for anything else, including other websites, email and phone links.
 
@@ -207,7 +222,7 @@ The footer is the bottom of every page. You build it on the **Footer** screen wi
 - **Link groups.** Each group has a heading (for example "More" or "Our services") and a list of links. Each link has its text and an address, such as `/about/` or `https://example.com/`. Use "Add link", "Move up", "Move down" and "Remove" inside a group, and "Add a link group", "Move group up", "Move group down" and "Remove group" for the groups themselves. Every one of those buttons saves the footer straight away and tells you what changed. You can have up to 6 groups and 20 links in each.
 - **Small print.** One line of plain text under the columns, for example a registration or licence number. The copyright line with the year and your name is added on its own.
 
-With Spanish pages turned on, the screen has an English footer and a Spanish footer. Spanish pages use the Spanish footer when it has something in it, and the English footer otherwise. If your site was set up before the Footer screen existed, it keeps using the footer HTML from the Site template screen until you tick the Contact column or add a group.
+With second language pages turned on, a "Which footer" navigation switches between the English footer and the second language's footer. Second-language pages use their own footer when it has something in it, and the English footer otherwise. If your site was set up before the Footer screen existed, it keeps using the footer HTML from the Site template screen until you tick the Contact column or add a group.
 
 ## Images and files
 
@@ -251,7 +266,7 @@ Events gives your website an events page with a calendar feed. Turn it on under 
 4. Enter a place, an online link (Zoom, Teams and so on), or both. The online link is shown as "Join online".
 5. Write the description with the same editors as blog posts, choose Published or Draft, and save.
 
-Where events appear: `/events/` lists upcoming events by month, with past ones folded away under "Past events". Each event has its own page at `/events/<address>/` with an **Add to my calendar** link that downloads a file Outlook, Apple Calendar and Google Calendar open. `/events/feed.ics` is a calendar feed people can subscribe to. Put `[upcoming-events]` in any page to show the next five events with a link to all of them, or `[events-list]` to show the whole list on a page of your own. With Spanish pages on, the list is also at `/es/eventos/`. Dates and times are shown in the time zone chosen in Settings, with the day of the week.
+Where events appear: `/events/` lists upcoming events by month, with past ones folded away under "Past events". Each event has its own page at `/events/<address>/` with an **Add to my calendar** link that downloads a file Outlook, Apple Calendar and Google Calendar open. `/events/feed.ics` is a calendar feed people can subscribe to. Put `[upcoming-events]` in any page to show the next five events with a link to all of them, or `[events-list]` to show the whole list on a page of your own. With second language pages on, the list is also on that side of the site (`/es/eventos/` for Spanish). Dates and times are shown in the time zone chosen in Settings, with the day of the week.
 
 ## Testimonials
 
@@ -301,7 +316,7 @@ Products is the list of things people can pay for. Choose "Add a product" and fi
 
 Every product has a shortcode, shown in the list, such as `[pay reiki-session]`. Put it on any page and a short form appears with a button that reads "Pay $25.00 for Reiki session". Each product also has a plain address you can share in an email, `yoursite.com/pay/reiki-session/`.
 
-Under the button is a sentence saying the visitor will pay on a secure page run by Stripe and that you never see their card. Afterwards they come back to a thank-you page with your message; if they change their mind on Stripe's page, they come back with "Your payment was cancelled and nothing was charged". On Spanish pages everything is in Spanish.
+Under the button is a sentence saying the visitor will pay on a secure page run by Stripe and that you never see their card. Afterwards they come back to a thank-you page with your message; if they change their mind on Stripe's page, they come back with "Your payment was cancelled and nothing was charged". On second-language pages everything is in that language (fully translated for Spanish; for other languages, whatever you have filled in on the Translations screen).
 
 ### Orders
 
@@ -315,6 +330,20 @@ To add one, fill in "From this address" (the old address, for example `/old-page
 
 The same screen lists "Missing addresses in the last 30 days": addresses people asked for that do not exist, with how many times and when last. Old links from emails, search engines or other sites show up here. Next to each is "Add a redirect", which fills in the old address for you so you only type where to send people. Automated scans and file names are left out. The Dashboard tells you when something needs attention: "5 addresses got 404s this week".
 
+## Importing an old website (owners)
+
+The **Import** screen brings an existing website into this one as drafts. Nothing goes live on its own: every imported page and post is saved as a draft, a page or post whose address is already in use here is skipped rather than replaced, and you see a preview first ("This file contains 12 pages, 40 posts and 85 media files") and confirm before anything is written. There are three ways in:
+
+1. **A WordPress export file.** In WordPress, go to Tools, then Export, choose "All content" and download the file (it ends in `.xml`). Upload it here; files up to 64 MB are accepted and the screen says if your server allows less. Pages, blog posts (with their dates and categories), and the pictures and files they use come across; the old site must still be online for the pictures to download. Menus, tags, featured images and the logo do not come across, and WordPress shortcodes such as `[gallery]` are left as text and listed in the report.
+2. **A zip of HTML files.** For a Google Sites Takeout, an old hand-made site, or any folder of web pages: zip it and upload it. Each file becomes a page, using its title and main content; a folder's `index.html` becomes that folder's page with the other files inside it, and the old home page is saved as a draft called `imported-home` because this site already has one.
+3. **A live website address.** For Wix, Squarespace, Google Sites and other builders with no export: type the home page address. The importer reads it and follows links on the same site, up to 60 pages. The report lists addresses it could not read and how many pages were left when the limit was reached.
+
+**How long it takes.** The preview and the import run while you wait: the preview reads the file or crawls the site, and the import downloads the pictures. Each step holds the screen until it has finished, which can take a few minutes for a big site. Leave the tab alone until it comes back. If you close it, the work still finishes and the report is under "Recent imports".
+
+**The report** lists the pages and posts created (each with an Edit link), the media files (saved under Images and files too), anything skipped and why, and notes. When imported pages have different addresses from the old site (a WordPress post at `/2020/05/hello/` is now `/blog/hello/`), the report has a button, "Add redirects for 12 old addresses". Press it and the old addresses are redirected to the new ones for good; ones already on the Redirects screen are not added twice. The screen keeps the last five reports, and each import is noted on the Activity screen.
+
+Afterwards, open each draft, check it with the accessibility check, give it a parent page if it belongs inside another, and set it to Published when you are happy.
+
 ## Visitors
 
 A private count made on your own server: no cookies and nothing shared with anyone. A visitor is counted once a day, and your own visits are not counted while you are signed in. A "Time period" navigation offers the last 7, 30, 90 days or year. Totals come first, then a "By day" table of visitors and page views.
@@ -327,17 +356,44 @@ Once a month the server checks every link on the website and emails you anything
 
 Settings has an "On this screen" navigation to its sections.
 
-- **Site details**: site name, tagline, description, mailing address, posts per page; your contact details (legal name, email, phone, contact page), used wherever the site tells people how to reach you; time zone; "Colors", a group of six radio buttons (Purple, Blue, Green, Teal, Rust red, Charcoal), all with the same high contrast; and "Logo", a drop-down of pictures you have uploaded under Images and files. Save with "Save site details".
-- **Features**: tick boxes that turn parts of the site on or off, including Forms, Events and Payments. Turning one off hides its screens and pages; nothing is deleted.
+- **Site details**: site name, tagline, description, mailing address, posts per page; your contact details (legal name, email, phone, contact page, and the second language's contact page when one is on), used wherever the site tells people how to reach you; "Languages", two drop-downs described below; time zone; "Colors", a group of six radio buttons (Purple, Blue, Green, Teal, Rust red, Charcoal), all with the same high contrast; and "Logo", a drop-down of pictures you have uploaded under Images and files. Save with "Save site details".
+- **Features**: tick boxes that turn parts of the site on or off, including Forms, Events, Payments and "Second language pages". Turning one off hides its screens and pages; nothing is deleted.
 - **Email sending**: how the site sends email. "Send email through" offers the web server's own mail program, an ordinary email account's SMTP server (Gmail, Outlook.com or a mailbox from your web host), or Microsoft 365. For an email account, fill in the SMTP server name, port, user name and password; Gmail and Outlook.com need an app password, not the one you sign in with, and the Password field is empty every time you open Settings (leave it empty to keep the saved one). "Save and send a test email" tells you which step failed if something is wrong.
 - **Payments**: the Stripe key, currency, thank-you message and webhook details described above.
 - **Your password and people**: links to My account, People and Activity.
 
 The other sections, Ask a question assistant, Next opening and Microsoft 365 sign-in, are usually set up by the person who hosts the site.
 
+## A second language (owners)
+
+Your site is written in one language, English unless you say otherwise, and can have a second side in another language: its own home page, pages, blog, search, menu, footer and a language switch in the header of every page.
+
+### Choosing the languages
+
+1. In Settings, under Site details, go to the "Languages" heading. "Language the site is written in" is normally English.
+2. In "Second language", choose from the list: Spanish, French, German, Italian, Portuguese, Dutch, Polish, Arabic, Chinese, Japanese, Korean, Hindi, Vietnamese or Tagalog. Choosing one turns its pages on; choosing "None" turns them off again but keeps the pages.
+3. Save site details.
+
+The same choice appears under Features as a tick box, "Second language pages (Spanish)", named after the language you chose; ticking or unticking it does the same thing. Arabic pages are laid out right to left. Only English and Spanish come fully translated: for any other language, the words the site writes itself stay in English until you fill them in on the Translations screen.
+
+### Second-language pages and their addresses
+
+A second-language page is an ordinary page whose address starts with the language's code and a hyphen: for Spanish, `es-contacto` appears at `/es/contacto/`, and the page editor's address hint tells you which prefix to use. The second-language home page is the page whose address is just the code (`es`). Blog posts work the same way, so `es-hola` appears at `/es/blog/hola/`. Use "Same page in Spanish" on an English page (and "Same page in English" on the Spanish one) to link the two; the language switch then goes straight to the translation. The Menu and Footer screens each gain a tab for the second language. When the site was created with a second language, five starter pages were made for you: in Spanish, or in English with a note at the top asking for a translation for any other language.
+
+### The Translations screen
+
+Translations (under Checks and tools) holds the words the website uses itself in the second language: buttons, labels, headings and messages such as "Skip to main content", "Search" or "Send". Page content is not here; that is under Pages.
+
+- Each row is one phrase: its key, the English text, and a text box for the second language. Leave a box empty to use the kit's wording (for Spanish) or the English text (for a language the kit has not translated yet).
+- "Show only rows containing" filters the list by a word, for example "blog"; "Show all" brings everything back.
+- Keep any `%s`, `%d`, `{site}` or `{contact}` you see in a phrase: the site fills them in.
+- One button, "Save all Spanish translations", saves every row. The website uses the new words straight away.
+
+If the site is written in a language other than English, the screen has a tab per language and English pages' words are edited there too.
+
 ## Site template (owners)
 
-Under Site template you can edit the layout HTML, the footer HTML, the Spanish footer and the stylesheet. These change every page at once. Leave them alone unless you are comfortable with HTML and CSS; earlier versions can be restored from the links next to each Save button. The footer boxes are used only when the Footer screen has nothing in it.
+Under Site template you can edit the layout HTML, the footer HTML, the second language's footer and the stylesheet. These change every page at once. Leave them alone unless you are comfortable with HTML and CSS; earlier versions can be restored from the links next to each Save button. The footer boxes are used only when the Footer screen has nothing in it.
 
 ## System, Sites and Backups (owners)
 
