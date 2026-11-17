@@ -406,7 +406,8 @@ register_dashboard_card(function (): string {
         $words = $total . ' other ' . ($total === 1 ? 'site' : 'sites') . ' listed; not checked yet.';
     } else {
         $fine = count(array_filter($fleet['sites'] ?? [], fn($s) => !empty($s['fine'])));
-        $words = "$fine of " . count($fleet['sites']) . ' sites are fine. Last checked ' . format_time((string) $fleet['checked']) . '.';
+        $n = count($fleet['sites']);
+        $words = ($n === 1 ? ($fine === 1 ? 'The 1 other site is fine.' : 'The 1 other site has something to look at.') : "$fine of $n sites are fine.") . ' Last checked ' . format_time((string) $fleet['checked']) . '.';
     }
     return '<li><h2><a href="' . h(admin_url('sites')) . '">Sites</a></h2><p>' . h($words) . '</p></li>';
 });

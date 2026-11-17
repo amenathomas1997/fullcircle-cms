@@ -278,7 +278,7 @@ function ops_sites_list(array $errors = [], array $v = []): never
         $body .= '<p>No other sites are listed yet. Add one below.</p>';
     } else {
         $body .= '<form method="post" action="' . h(admin_url('sites', ['do' => 'check'])) . '" class="form-actions">' . csrf_field()
-            . '<button type="submit" class="button">Check all ' . count($sites) . ' sites</button>'
+            . '<button type="submit" class="button">' . (count($sites) === 1 ? 'Check this site' : 'Check all ' . count($sites) . ' sites') . '</button>'
             . ($fleet ? '<span>Last checked ' . h(format_time((string) $fleet['checked'])) . '.</span>' : '') . '</form>'
             . '<div class="table-wrap"><table><caption class="visually-hidden">Other sites and their last check</caption><thead><tr><th scope="col">Site</th><th scope="col">Address</th><th scope="col">Version</th><th scope="col">Last check</th><th scope="col">Actions</th></tr></thead><tbody>';
         foreach ($sites as $i => $site) {
@@ -309,8 +309,9 @@ function ops_sites_check(): never
     $all = check_fleet();
     $fine = count(array_filter($all['sites'], fn($s) => !empty($s['fine'])));
     $total = count($all['sites']);
+    $sites = $total === 1 ? '1 site' : "$total sites";
     flash($fine === $total ? ($total === 1 ? 'Checked 1 site: all good.' : "Checked $total sites: all are fine.")
-        : "Checked $total sites: $fine " . ($fine === 1 ? 'is' : 'are') . ' fine, ' . ($total - $fine) . ' ' . ($total - $fine === 1 ? 'has' : 'have') . ' something to look at. The table has the details.');
+        : "Checked $sites: $fine " . ($fine === 1 ? 'is' : 'are') . ' fine, ' . ($total - $fine) . ' ' . ($total - $fine === 1 ? 'has' : 'have') . ' something to look at. The table has the details.');
     go(admin_url('sites'));
 }
 
@@ -442,7 +443,8 @@ function ops_backups_list(): never
         $body .= '<div class="table-wrap"><table><caption class="visually-hidden">Nightly backups, newest first</caption><thead><tr><th scope="col">Date</th><th scope="col">Size</th><th scope="col">Made by version</th><th scope="col">Actions</th></tr></thead><tbody>';
         foreach ($archives as $a) {
             $m = $a['manifest'] ?? [];
-            $what = isset($m['items']) ? ' (' . (int) $m['items']['pages'] . ' pages, ' . (int) $m['items']['posts'] . ' posts, ' . (int) $m['items']['uploads'] . ' uploads)' : '';
+            $plural = fn(int $n, string $one, string $many) => $n . ' ' . ($n === 1 ? $one : $many);
+            $what = isset($m['items']) ? ' (' . $plural((int) $m['items']['pages'], 'page', 'pages') . ', ' . $plural((int) $m['items']['posts'], 'post', 'posts') . ', ' . $plural((int) $m['items']['uploads'], 'upload', 'uploads') . ')' : '';
             $body .= '<tr><th scope="row">' . h(format_date($a['date'])) . '</th><td>' . h(format_bytes($a['size'])) . '</td><td>' . h((string) ($m['version'] ?? 'unknown')) . h($what) . '</td>'
                 . '<td class="actions"><a href="' . h(admin_url('backups', ['do' => 'download', 'file' => $a['name']])) . '">Download<span class="visually-hidden"> the backup from ' . h(format_date($a['date'])) . '</span></a>'
                 . '<a href="' . h(admin_url('backups', ['do' => 'item', 'file' => $a['name']])) . '">Restore one item<span class="visually-hidden"> from ' . h(format_date($a['date'])) . '</span></a>'
