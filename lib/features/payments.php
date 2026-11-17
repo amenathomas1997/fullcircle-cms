@@ -256,7 +256,9 @@ function payments_start(array $product): never
     $return = pay_return_path($slug);
     $lang = is_second_lang((string) ($_POST['lang'] ?? '')) ? second_lang() : primary_lang();
     current_lang($lang);
-    $back = fn(string $state): never => redirect_303($return . (str_contains($return, '?') ? '&' : '?') . "pay=$state&item=" . rawurlencode($slug) . "#pay-$slug-status");
+    $back = function (string $state) use ($return, $slug): never {
+        redirect_303($return . (str_contains($return, '?') ? '&' : '?') . "pay=$state&item=" . rawurlencode($slug) . "#pay-$slug-status");
+    };
     if (($_POST['website'] ?? '') !== '') {
         // A bot filled in the hidden field; pretend nothing happened.
         $back('cancelled');
