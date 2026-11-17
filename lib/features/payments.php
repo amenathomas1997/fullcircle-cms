@@ -230,10 +230,11 @@ function checkout_session_fields(array $product, int $quantity, string $note, st
                 'product_data' => ['name' => (string) $product['name']],
             ],
         ]],
-        'success_url' => site_url('/pay/thanks/') . '?s={CHECKOUT_SESSION_ID}' . ($lang === 'es' ? '&lang=es' : ''),
+        'success_url' => site_url('/pay/thanks/') . '?s={CHECKOUT_SESSION_ID}' . (is_second_lang($lang) ? '&lang=' . $lang : ''),
         'cancel_url' => site_url($returnPath) . $sep . 'pay=cancelled&item=' . rawurlencode($slug) . '#pay-' . $slug . '-status',
         'customer_creation' => 'always',
-        'locale' => $lang === 'es' ? 'es' : 'auto',
+        // Stripe shows its page in these languages; anything else lets it pick from the browser.
+        'locale' => in_array($lang, ['es', 'fr', 'de', 'it', 'pt', 'nl', 'pl', 'zh', 'ja', 'ko', 'vi'], true) ? $lang : 'auto',
         'metadata' => ['product' => $slug, 'quantity' => (string) $quantity, 'lang' => $lang, 'site' => site_host()],
     ];
     if (($d = trim((string) ($product['description'] ?? ''))) !== '') {
@@ -253,7 +254,7 @@ function payments_start(array $product): never
 {
     $slug = (string) $product['slug'];
     $return = pay_return_path($slug);
-    $lang = ($_POST['lang'] ?? '') === 'es' ? 'es' : 'en';
+    $lang = is_second_lang((string) ($_POST['lang'] ?? '')) ? second_lang() : primary_lang();
     current_lang($lang);
     $back = fn(string $state): never => redirect_303($return . (str_contains($return, '?') ? '&' : '?') . "pay=$state&item=" . rawurlencode($slug) . "#pay-$slug-status");
     if (($_POST['website'] ?? '') !== '') {
@@ -292,8 +293,8 @@ function redirect_303(string $to): never
 /** /pay/thanks/?s=<session id>: confirm the payment with Stripe and say thank you. */
 function payments_thanks(): never
 {
-    if (($_GET['lang'] ?? '') === 'es') {
-        current_lang('es');
+    if (is_second_lang((string) ($_GET['lang'] ?? ''))) {
+        current_lang(second_lang());
     }
     $id = (string) ($_GET['s'] ?? '');
     $paid = false;
@@ -314,12 +315,12 @@ function payments_thanks(): never
         $html = '<h1 id="pay-status" tabindex="-1" data-focus-on-load>' . h(t('pay_thanks_title')) . '</h1>'
             . '<p>' . h(sprintf(t('pay_thanks_body'), format_money((int) ($session['amount_total'] ?? 0), (string) ($session['currency'] ?? payments_currency())), $name)) . '</p>'
             . ($custom !== '' ? '<p>' . nl2br(h($custom)) . '</p>' : '')
-            . '<p><a href="' . (current_lang() === 'es' ? '/es/' : '/') . '">' . h(t('pay_home')) . '</a></p>';
+            . '<p><a href="' . h(home_path()) . '">' . h(t('pay_home')) . '</a></p>';
         send_html(render_layout(t('pay_thanks_title'), $html));
     }
     $html = '<h1 id="pay-status" tabindex="-1" data-focus-on-load>' . h(t('pay_not_confirmed_title')) . '</h1>'
         . '<p>' . h(t('pay_not_confirmed_body')) . '</p>'
-        . '<p><a href="' . (current_lang() === 'es' ? '/es/' : '/') . '">' . h(t('pay_home')) . '</a></p>';
+        . '<p><a href="' . h(home_path()) . '">' . h(t('pay_home')) . '</a></p>';
     send_html(render_layout(t('pay_not_confirmed_title'), $html), 200);
 }
 

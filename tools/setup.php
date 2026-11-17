@@ -6,7 +6,7 @@
  * and password) and which optional features to turn on, then creates the starter pages.
  * Every answer can also be given as an environment variable (SETUP_SITE_NAME,
  * SETUP_SITE_URL, SETUP_EMAIL, SETUP_PHONE, SETUP_TIMEZONE, SETUP_PALETTE,
- * SETUP_SPANISH=yes, SETUP_OWNER_NAME, SETUP_OWNER_EMAIL (defaults to SETUP_EMAIL),
+ * SETUP_SPANISH=yes or SETUP_SECOND_LANGUAGE=<code> (es, fr, de, …), SETUP_PRIMARY_LANGUAGE=<code>, SETUP_OWNER_NAME, SETUP_OWNER_EMAIL (defaults to SETUP_EMAIL),
  * SETUP_PASSWORD, SETUP_LEGAL_NAME, SETUP_TAGLINE), and
  * `php tools/setup.php --yes` accepts the defaults for anything not given.
  */
@@ -55,7 +55,9 @@ $email = ask_setup('SETUP_EMAIL', 'Public contact email (optional)', '');
 $phone = ask_setup('SETUP_PHONE', 'Public contact phone (optional)', '');
 $tz = ask_setup('SETUP_TIMEZONE', 'Time zone', 'America/New_York');
 $palette = strtolower(ask_setup('SETUP_PALETTE', 'Color set (' . implode(', ', array_keys(PALETTES)) . ')', 'purple'));
+$primary = strtolower(ask_setup('SETUP_PRIMARY_LANGUAGE', 'Language the site is written in (' . implode(', ', array_keys(SUPPORTED_LANGUAGES)) . ')', 'en'));
 $spanish = in_array(strtolower(ask_setup('SETUP_SPANISH', 'Add Spanish pages too? (yes/no)', 'no')), ['y', 'yes', 'sí', 'si'], true);
+$second = strtolower(ask_setup('SETUP_SECOND_LANGUAGE', 'Or a different second language? (a code from the list above, or Enter for none)', $spanish ? 'es' : ''));
 
 $problems = [];
 if ($name === '') {
@@ -72,6 +74,11 @@ if (!in_array($tz, DateTimeZone::listIdentifiers(), true)) {
 }
 if (!isset(PALETTES[$palette])) {
     $problems[] = 'Choose one of these color sets: ' . implode(', ', array_keys(PALETTES)) . '.';
+}
+if (!isset(SUPPORTED_LANGUAGES[$primary]) || ($second !== '' && !isset(SUPPORTED_LANGUAGES[$second]))) {
+    $problems[] = 'Languages are chosen by code: ' . implode(', ', array_keys(SUPPORTED_LANGUAGES)) . '.';
+} elseif ($second === $primary) {
+    $problems[] = 'The second language must be different from the primary one.';
 }
 if ($problems) {
     fwrite(STDERR, "Nothing was changed:\n- " . implode("\n- ", $problems) . "\n");
@@ -110,7 +117,9 @@ save_settings(array_merge(settings(), [
     'contact_phone' => $phone,
     'timezone' => $tz,
     'palette' => $palette,
-    'features' => array_merge(FEATURE_DEFAULTS, ['spanish' => $spanish]),
+    'primary_language' => $primary,
+    'second_language' => $second,
+    'features' => array_merge(FEATURE_DEFAULTS, ['spanish' => $second !== '']),
 ]));
 // Dates from here on (the first post, the revisions) use the site's own time zone.
 date_default_timezone_set($tz);
@@ -123,7 +132,7 @@ foreach ([DATA_DIR . '/cache', DATA_DIR . '/stats', UPLOAD_DIR . '/audio'] as $d
         @mkdir($dir, 0755, true);
     }
 }
-create_starter_content($spanish);
+create_starter_content($second);
 
 echo "\nDone. $name is set up with ", count(all_items('pages')), " pages and one blog post.\n";
 echo "Next:\n";

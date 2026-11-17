@@ -17,6 +17,7 @@ content/forms/*
 content/testimonials/*
 content/update-archive/*
 content/settings.json
+content/languages/*
 !content/pages/.gitkeep
 !content/posts/.gitkeep
 !content/resources/.gitkeep
@@ -24,6 +25,7 @@ content/settings.json
 !content/revisions/.gitkeep
 !content/events/.gitkeep
 !content/forms/.gitkeep
+!content/languages/.gitkeep
 
 # Visitor uploads (blog audio, images) stay on the server.
 uploads/*

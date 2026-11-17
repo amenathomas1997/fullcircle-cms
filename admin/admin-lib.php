@@ -125,7 +125,8 @@ function editor_scripts(): string
 {
     // The ?v= changes when a script changes, so browsers never run a week-old cached copy.
     $v = fn(string $f) => '/admin/' . $f . '?v=' . (@filemtime(ROOT . '/admin/' . $f) ?: 1);
-    return '<script src="/admin/vendor/tinymce/tinymce.min.js"></script><script src="' . $v('blocks-editor.js') . '" defer></script><script src="' . $v('editor.js') . '" defer></script>';
+    $langs = json_encode(['primary' => primary_lang(), 'second' => second_lang()]);
+    return '<script>window.fcLanguages=' . $langs . '</script><script src="/admin/vendor/tinymce/tinymce.min.js"></script><script src="' . $v('blocks-editor.js') . '" defer></script><script src="' . $v('editor.js') . '" defer></script>';
 }
 
 function csrf_field(): string
@@ -272,7 +273,8 @@ function feature_labels(): array
         'stories' => ['Success stories', 'Stories from the people you work with, at /success-stories/, with a consent check.'],
         'assistant' => ['Ask a question (Claude)', 'Visitors ask a question and get an answer written from your website. Needs an Anthropic API key.'],
         'bookings' => ['Microsoft Bookings next opening', 'The [next-opening] shortcode shows the next free time in a Bookings calendar.'],
-        'spanish' => ['Spanish pages', 'A Spanish side of the site at /es/, with its own menu, footer, blog and language switch.'],
+        'spanish' => ['Second language pages (' . second_lang_name() . ')', 'A ' . second_lang_name() . ' side of the site at ' . (second_lang() !== '' ? home_path(second_lang()) : '/<code>/')
+            . ', with its own menu, footer, blog and language switch.' . ((string) (settings()['second_language'] ?? '') === '' ? ' Choose the language under Site details; until you do, it is Spanish.' : '')],
     ] + array_map(fn($f) => [$f[0], $f[1]], registered('features'));
 }
 
@@ -293,6 +295,20 @@ function timezone_select(string $name, string $label, string $current, string $h
             $out .= '<option value="' . h($tz) . '"' . ($tz === $current ? ' selected' : '') . '>' . h(str_replace('_', ' ', $tz)) . '</option>';
         }
         $out .= '</optgroup>';
+    }
+    return $out . '</select></div>';
+}
+
+/** A language drop-down: every supported language by its own name, with its English name after it. */
+function language_select(string $name, string $label, string $current, string $hint = '', ?string $noneLabel = null): string
+{
+    $out = '<div class="field"><label for="' . h($name) . '">' . h($label) . '</label>'
+        . ($hint !== '' ? '<p class="hint" id="' . h($name) . '-hint">' . h($hint) . '</p>' : '')
+        . '<select id="' . h($name) . '" name="' . h($name) . '"' . ($hint !== '' ? ' aria-describedby="' . h($name) . '-hint"' : '') . '>'
+        . ($noneLabel !== null ? '<option value=""' . ($current === '' ? ' selected' : '') . '>' . h($noneLabel) . '</option>' : '');
+    foreach (SUPPORTED_LANGUAGES as $code => [$native, $english]) {
+        $text = $native === $english ? $native : "$native ($english)";
+        $out .= '<option value="' . $code . '"' . ($code === $current ? ' selected' : '') . ' lang="' . $code . '">' . h($text) . '</option>';
     }
     return $out . '</select></div>';
 }

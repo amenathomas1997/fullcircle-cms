@@ -38,7 +38,7 @@ $GLOBALS['current_editor'] = (string) ($_SESSION['admin_name'] ?? 'Unknown');
 const ACTION_ROLES = [
     '' => 'author', 'posts' => 'author', 'post' => 'author', 'media' => 'author', 'media_delete' => 'author', 'upload_image' => 'author',
     'preview' => 'author', 'revisions' => 'author', 'delete' => 'author', 'logout' => 'author', 'account' => 'author',
-    'template' => 'owner', 'settings' => 'owner', 'backup' => 'owner', 'people' => 'owner', 'activity' => 'owner',
+    'template' => 'owner', 'settings' => 'owner', 'backup' => 'owner', 'people' => 'owner', 'activity' => 'owner', 'translations' => 'owner',
 ];
 require_role(ACTION_ROLES[$action] ?? 'editor');
 // Authors only reach blog posts through the shared delete, revisions and preview screens.
@@ -127,7 +127,7 @@ function setup_screen(bool $post): never
             . '<p>Or create a file called <code>data/setup-code.txt</code> containing any code of 12 or more characters, then reload this page and type the code.</p>');
     }
     $v = ['site_name' => trim((string) ($_POST['site_name'] ?? '')), 'site_url' => rtrim(trim((string) ($_POST['site_url'] ?? ('https://' . ($_SERVER['HTTP_HOST'] ?? 'example.com')))), '/'),
-        'contact_email' => trim((string) ($_POST['contact_email'] ?? '')), 'spanish' => !empty($_POST['spanish']),
+        'contact_email' => trim((string) ($_POST['contact_email'] ?? '')), 'second' => (string) ($_POST['second_language'] ?? ''),
         'owner_name' => trim((string) ($_POST['owner_name'] ?? '')), 'owner_email' => normalize_email((string) ($_POST['owner_email'] ?? ''))];
     $errors = [];
     if ($post) {
@@ -150,6 +150,9 @@ function setup_screen(bool $post): never
         if ($v['contact_email'] !== '' && !filter_var($v['contact_email'], FILTER_VALIDATE_EMAIL)) {
             $errors['contact_email'] = 'Enter the email in the right format, like name@example.com.';
         }
+        if ($v['second'] !== '' && (!isset(SUPPORTED_LANGUAGES[$v['second']]) || $v['second'] === 'en')) {
+            $errors['second_language'] = 'Choose a second language from the list, or none.';
+        }
         if (strlen($pw) < 12) {
             $errors['password'] = 'Choose a password that is at least 12 characters long.';
         } elseif ($pw !== ($_POST['confirm'] ?? '')) {
@@ -157,10 +160,10 @@ function setup_screen(bool $post): never
         }
         if (!$errors) {
             save_settings(array_merge(settings(), ['site_name' => $v['site_name'], 'site_url' => $v['site_url'], 'contact_email' => $v['contact_email'],
-                'features' => array_merge(FEATURE_DEFAULTS, ['spanish' => $v['spanish']])]));
+                'primary_language' => 'en', 'second_language' => $v['second'], 'features' => array_merge(FEATURE_DEFAULTS, ['spanish' => $v['second'] !== ''])]));
             save_config(['contact_recipients' => $v['contact_email']]);
             $owner = create_user($v['owner_name'], $v['owner_email'], $pw, 'owner');
-            create_starter_content($v['spanish']);
+            create_starter_content($v['second']);
             if (is_file($codeFile)) {
                 @unlink($codeFile);
             }
@@ -175,7 +178,8 @@ function setup_screen(bool $post): never
         . text_field('site_name', 'Site name', $v['site_name'], ['required' => true, 'error' => $errors['site_name'] ?? null])
         . text_field('site_url', 'Site address', $v['site_url'], ['type' => 'url', 'required' => true, 'spellcheck' => 'false', 'error' => $errors['site_url'] ?? null])
         . text_field('contact_email', 'Public contact email (optional)', $v['contact_email'], ['type' => 'email', 'error' => $errors['contact_email'] ?? null])
-        . checkbox_field('spanish', 'Add Spanish pages too', $v['spanish'])
+        . language_select('second_language', 'Second language (optional)', $v['second'],
+            'The site starts in English. Choose a second language to get a second set of starter pages: in Spanish, or in English waiting to be translated for any other language. You can change this later in Settings.', 'None, English only')
         . '<h2>Your owner account</h2><p>You sign in to the control panel with these. You can add other people later on the People screen.</p>'
         . text_field('owner_name', 'Your name', $v['owner_name'], ['required' => true, 'autocomplete' => 'name', 'error' => $errors['owner_name'] ?? null, 'hint' => 'Shown next to the changes you make.'])
         . text_field('owner_email', 'Your email address', $v['owner_email'], ['type' => 'email', 'required' => true, 'autocomplete' => 'username', 'spellcheck' => 'false', 'error' => $errors['owner_email'] ?? null, 'hint' => 'You sign in with this, and password links are sent to it.'])
@@ -365,7 +369,7 @@ function page_form(?array $values = null, array $errors = [], ?string $origSlug 
         $body .= text_field('slug', 'Page address', (string) $v['slug'], ['prefix' => site_url('/'), 'spellcheck' => 'false', 'autocomplete' => 'off',
             'error' => $errors['slug'] ?? null,
             'hint' => 'Lowercase letters, numbers and dashes, for example <code>about-us</code>. Leave it empty to make one from the title. '
-                . 'For a Spanish page, start it with <code>es-</code>, for example <code>es-contacto</code>; it will appear at <code>/es/contacto/</code>.'
+                . second_lang_slug_hint('page')
                 . ($isNew ? '' : ' If you change it, links to the old address will stop working.')]);
     }
     $body .= parent_field($v, $origSlug)
@@ -483,7 +487,7 @@ function page_save(): never
     nested_page_saved($existing ? $origSlug : null, $v['slug'], $oldPaths);
 
     $s = settings();
-    $menuKey = slug_lang($v['slug']) === 'es' ? 'menu_es' : 'menu';
+    $menuKey = is_second_lang(slug_lang($v['slug'])) ? 'menu_es' : 'menu';
     if ($addToMenu) {
         $s[$menuKey][] = ['label' => $v['title'], 'url' => page_path($v['slug'])];
         save_settings($s);
@@ -505,7 +509,7 @@ function translation_field(array $v, ?string $origSlug): string
         return '';
     }
     $lang = slug_lang((string) ($v['slug'] ?: ($origSlug ?? '')));
-    $other = $lang === 'es' ? 'English' : 'Spanish';
+    $other = language_english_name(other_lang($lang));
     $options = '<option value="">None</option>';
     foreach (all_items('pages') as $p) {
         if (slug_lang($p['slug']) !== $lang) {
@@ -587,7 +591,7 @@ function post_form(?array $values = null, array $errors = [], ?string $origSlug 
         . text_field('date', 'Publish date and time', substr((string) $v['date'], 0, 16), ['type' => 'datetime-local', 'required' => true, 'error' => $errors['date'] ?? null,
             'hint' => 'Pick a future date to schedule the post. It appears on the blog at that time.'])
         . text_field('slug', 'Post address', (string) $v['slug'], ['prefix' => site_url('/blog/'), 'spellcheck' => 'false', 'autocomplete' => 'off',
-            'error' => $errors['slug'] ?? null, 'hint' => 'Leave it empty to make one from the title. For a Spanish post, start it with <code>es-</code>; it appears on the Spanish blog at <code>/es/blog/</code>.'])
+            'error' => $errors['slug'] ?? null, 'hint' => 'Leave it empty to make one from the title. ' . second_lang_slug_hint('post')])
         . textarea_field('excerpt', 'Summary (optional)', (string) ($v['excerpt'] ?? ''), ['rows' => 3,
             'hint' => 'Shown on the blog page and in search results. If you leave it empty, the first few sentences of the post are used.'])
         . text_field('categories', 'Topics (optional)', implode(', ', (array) ($v['categories'] ?? [])), ['autocomplete' => 'off',
@@ -846,7 +850,7 @@ function revision_label(string $key): array
         'posts' => ['the post “' . (get_item('posts', $slug)['title'] ?? $slug) . '”', admin_url('post', ['slug' => $slug])],
         'resources' => ['the cheat sheet “' . (get_item('resources', $slug)['title'] ?? $slug) . '”', admin_url('resource', ['slug' => $slug])],
         'videos', 'stories' => [COLLECTIONS[$type]['singular'] . ' “' . (get_item($type, $slug)['title'] ?? $slug) . '”', admin_url($type, ['slug' => $slug])],
-        'template' => [['layout' => 'the site layout', 'css' => 'the stylesheet', 'footer' => 'the footer', 'footer-es' => 'the Spanish footer'][$slug] ?? 'the template', admin_url('template')],
+        'template' => [['layout' => 'the site layout', 'css' => 'the stylesheet', 'footer' => 'the footer', 'footer-es' => 'the ' . second_lang_name() . ' footer'][$slug] ?? 'the template', admin_url('template')],
         // Item types added by features: the screen is named after the type (events, forms, products).
         default => ['the ' . rtrim($type, 's') . ' “' . (get_item($type, $slug)['title'] ?? get_item($type, $slug)['name'] ?? $slug) . '”', admin_url($type, ['slug' => $slug])],
     };
@@ -1083,13 +1087,33 @@ function editor_image_upload(): never
 
 function menu_lang(): string
 {
-    return ($_GET['lang'] ?? '') === 'es' ? 'es' : 'en';
+    return is_second_lang((string) ($_GET['lang'] ?? '')) ? second_lang() : primary_lang();
+}
+
+/** Query parameters that pick the menu or footer of a language: none for the primary one. */
+function lang_params(string $lang): array
+{
+    return is_second_lang($lang) ? ['lang' => $lang] : [];
+}
+
+/** "For a Spanish page, start it with es-, for example es-contacto; it will appear at /es/contacto/." */
+function second_lang_slug_hint(string $kind): string
+{
+    if (second_lang() === '') {
+        return '';
+    }
+    $code = second_lang();
+    $name = second_lang_name();
+    $example = $code . '-' . lang_route('contact', $code);
+    return $kind === 'post'
+        ? "For a $name post, start it with <code>$code-</code>; it appears on the $name blog at <code>" . h(blog_base($code)) . '</code>.'
+        : "For a $name page, start it with <code>$code-</code>, for example <code>$example</code>; it will appear at <code>" . h(page_path($example)) . '</code>.';
 }
 
 function menu_form(array $errors = [], ?array $menu = null): never
 {
     $lang = menu_lang();
-    $menu ??= settings()[$lang === 'es' ? 'menu_es' : 'menu'];
+    $menu ??= settings()[is_second_lang($lang) ? 'menu_es' : 'menu'];
     $count = count($menu);
     $rows = '';
     foreach ($menu as $i => $link) {
@@ -1111,10 +1135,10 @@ function menu_form(array $errors = [], ?array $menu = null): never
         }
         $options .= '<option value="' . h(page_path($p['slug'])) . '">' . h($p['title']) . '</option>';
     }
-    $options .= '<option value="/blog/">Blog</option>';
+    $options .= '<option value="' . h(blog_base($lang)) . '">Blog</option>';
 
     $body = '<p>These links appear in the main menu at the top of every page, in this order. Moving or removing an item saves the menu straight away.</p>'
-        . '<form method="post" action="' . h(admin_url('menu', ['lang' => $lang])) . '">' . csrf_field() . $rows
+        . '<form method="post" action="' . h(admin_url('menu', lang_params($lang))) . '">' . csrf_field() . $rows
         . '<div class="form-actions"><button type="submit" class="button" name="move" value="save">Save menu</button></div>'
         . '<h2>Add a link</h2>'
         . '<div class="field"><label for="add-page">Link to one of your pages</label><select id="add-page" name="add_page">' . $options . '</select></div>'
@@ -1122,11 +1146,14 @@ function menu_form(array $errors = [], ?array $menu = null): never
         . text_field('add_label', 'Link text', '', ['error' => $errors['add_label'] ?? null])
         . text_field('add_url', 'Link address', '', ['spellcheck' => 'false', 'hint' => 'For example <code>/contact-us/</code>, <code>/services/reiki/</code> for a page inside another page, or <code>https://example.com/page/</code>', 'error' => $errors['add_url'] ?? null])
         . '<button type="submit" class="button" name="move" value="add">Add to menu</button></form>';
-    $switch = '<nav aria-label="Which menu"><ul class="period-list">'
-        . '<li><a href="' . h(admin_url('menu')) . '"' . ($lang === 'en' ? ' aria-current="page"' : '') . '>English menu</a></li>'
-        . '<li><a href="' . h(admin_url('menu', ['lang' => 'es'])) . '"' . ($lang === 'es' ? ' aria-current="page"' : '') . '>Spanish menu</a></li></ul></nav>'
-        . ($lang === 'es' ? '<p>This menu is shown on Spanish pages (addresses starting with /es/).</p>' : '');
-    admin_screen($lang === 'es' ? 'Spanish menu' : 'Menu', $switch . $body, 'menu', ['errors' => $errors]);
+    $switch = '';
+    if (second_lang_on()) {
+        $switch = '<nav aria-label="Which menu"><ul class="period-list">'
+            . '<li><a href="' . h(admin_url('menu')) . '"' . (!is_second_lang($lang) ? ' aria-current="page"' : '') . '>' . h(language_english_name(primary_lang())) . ' menu</a></li>'
+            . '<li><a href="' . h(admin_url('menu', ['lang' => second_lang()])) . '"' . (is_second_lang($lang) ? ' aria-current="page"' : '') . '>' . h(second_lang_name()) . ' menu</a></li></ul></nav>'
+            . (is_second_lang($lang) ? '<p>This menu is shown on ' . h(second_lang_name()) . ' pages (addresses starting with ' . h(home_path($lang)) . ').</p>' : '');
+    }
+    admin_screen(is_second_lang($lang) ? second_lang_name() . ' menu' : 'Menu', $switch . $body, 'menu', ['errors' => $errors]);
 }
 
 function menu_save(): never
@@ -1187,10 +1214,10 @@ function menu_save(): never
         menu_form($errors, $menu);
     }
     $s = settings();
-    $s[menu_lang() === 'es' ? 'menu_es' : 'menu'] = $menu;
+    $s[is_second_lang(menu_lang()) ? 'menu_es' : 'menu'] = $menu;
     save_settings($s);
     flash($message);
-    go(admin_url('menu', menu_lang() === 'es' ? ['lang' => 'es'] : []));
+    go(admin_url('menu', lang_params(menu_lang())));
 }
 
 /* =====================================================================
@@ -1245,13 +1272,14 @@ function template_form(array $errors = [], array $values = []): never
     $footer = $values['footer'] ?? settings()['footer_html'];
     $footerEs = $values['footer_es'] ?? settings()['footer_html_es'];
     $css = $values['css'] ?? (string) file_get_contents(STYLESHEET);
+    $secondName = second_lang_name();
     $placeholders = '<code>{{content}}</code> (required: the page content), <code>{{menu}}</code>, <code>{{footer}}</code>, <code>{{title}}</code>, <code>{{page_title}}</code>, '
         . '<code>{{site_name}}</code>, <code>{{tagline}}</code>, <code>{{description}}</code>, <code>{{canonical}}</code>, <code>{{site_url}}</code>, <code>{{year}}</code>, '
-        . '<code>{{lang}}</code> (en or es), <code>{{home_url}}</code>, <code>{{skip_link}}</code>, <code>{{menu_label}}</code>, <code>{{display_options}}</code> (the Display options button), '
+        . '<code>{{lang}}</code> (the language code, such as en or es), <code>{{home_url}}</code>, <code>{{skip_link}}</code>, <code>{{menu_label}}</code>, <code>{{display_options}}</code> (the Display options button), '
         . '<code>{{language_switch}}</code> (link to the other language) and <code>{{alternates}}</code> (language links for search engines)';
 
     $body = '<p>The template is the HTML wrapped around every page: the head, header, menu and footer. Changes show on every page as soon as you save.</p>'
-        . '<nav aria-label="On this screen"><ul><li><a href="#layout-section">Layout HTML</a></li><li><a href="#footer-section">Footer HTML</a></li><li><a href="#footer-es-section">Spanish footer HTML</a></li><li><a href="#css-section">Stylesheet</a></li></ul></nav>'
+        . '<nav aria-label="On this screen"><ul><li><a href="#layout-section">Layout HTML</a></li><li><a href="#footer-section">Footer HTML</a></li><li><a href="#footer-es-section">' . h($secondName) . ' footer HTML</a></li><li><a href="#css-section">Stylesheet</a></li></ul></nav>'
 
         . '<section id="layout-section" aria-labelledby="layout-heading"><h2 id="layout-heading">Layout HTML</h2>'
         . '<form method="post" action="' . h(admin_url('template')) . '" data-editor-form>' . csrf_field()
@@ -1269,13 +1297,13 @@ function template_form(array $errors = [], array $values = []): never
         . '<div class="form-actions"><button type="submit" class="button">Save footer</button>'
         . '<a href="' . h(admin_url('revisions', ['key' => 'template/footer'])) . '">Earlier versions of the footer</a></div></form></section>'
 
-        . '<section id="footer-es-section" aria-labelledby="footer-es-heading"><h2 id="footer-es-heading">Spanish footer HTML</h2>'
+        . '<section id="footer-es-section" aria-labelledby="footer-es-heading"><h2 id="footer-es-heading">' . h($secondName) . ' footer HTML</h2>'
         . '<form method="post" action="' . h(admin_url('template')) . '" data-editor-form>' . csrf_field()
         . '<input type="hidden" name="part" value="footer_es">'
-        . textarea_field('footer_es', 'Spanish footer HTML', $footerEs, ['rows' => 16, 'code' => true, 'class' => 'field-wide',
-            'hint' => 'Used instead of the footer above on Spanish pages, and only when the Footer screen has no Spanish groups. Leave it empty to use the English footer.'])
-        . '<div class="form-actions"><button type="submit" class="button">Save Spanish footer</button>'
-        . '<a href="' . h(admin_url('revisions', ['key' => 'template/footer-es'])) . '">Earlier versions of the Spanish footer</a></div></form></section>'
+        . textarea_field('footer_es', $secondName . ' footer HTML', $footerEs, ['rows' => 16, 'code' => true, 'class' => 'field-wide',
+            'hint' => 'Used instead of the footer above on ' . h($secondName) . ' pages, and only when the Footer screen has no ' . h($secondName) . ' groups. Leave it empty to use the ' . h(language_english_name(primary_lang())) . ' footer.'])
+        . '<div class="form-actions"><button type="submit" class="button">Save ' . h($secondName) . ' footer</button>'
+        . '<a href="' . h(admin_url('revisions', ['key' => 'template/footer-es'])) . '">Earlier versions of the ' . h($secondName) . ' footer</a></div></form></section>'
 
         . '<section id="css-section" aria-labelledby="css-heading"><h2 id="css-heading">Stylesheet</h2>'
         . '<form method="post" action="' . h(admin_url('template')) . '" data-editor-form>' . csrf_field()
@@ -1313,7 +1341,7 @@ function template_save(): never
         save_revision('template', 'footer-es', $s['footer_html_es']);
         $s['footer_html_es'] = $text;
         save_settings($s);
-        flash('Saved the Spanish footer.');
+        flash('Saved the ' . second_lang_name() . ' footer.');
         go(admin_url('template') . '#footer-es-section');
     }
     if ($part === 'css') {
@@ -1352,12 +1380,19 @@ function settings_form(array $errors = [], array $values = []): never
         . textarea_field('mailing_address', 'Mailing address for email updates', (string) ($s['mailing_address'] ?? ''), ['rows' => 2,
             'hint' => 'Required by law (CAN-SPAM) at the bottom of every update email. A PO box works. It isn’t shown on the website.'])
         . text_field('posts_per_page', 'Blog posts per page', (string) $s['posts_per_page'], ['type' => 'number', 'inputmode' => 'numeric', 'error' => $errors['posts_per_page'] ?? null])
+        . '<h3>Languages</h3>'
+        . language_select('primary_language', 'Language the site is written in', primary_lang(),
+            'The language of your pages, blog and search. The site’s own words (menus, buttons, messages) follow it where a translation exists; otherwise they stay in English.')
+        . language_select('second_language', 'Second language', second_lang_on() ? second_lang() : '',
+            'Pages in this language live at /' . h(second_lang() ?: 'code') . '/ and are named with that code first, for example ' . h(second_lang() ?: 'es') . '-contact. '
+            . 'Choosing a language turns its pages on, the same as the “Second language pages” switch under Features; choosing none turns them off but keeps the pages. '
+            . 'Only English and Spanish come fully translated: for any other language the site’s own words stay in English until you fill them in under Translations.', 'None')
         . '<h3>Contact details</h3><p>Shown wherever the site tells people how to reach you: error messages, email footers, downloads and the contact page link.</p>'
         . text_field('legal_name', 'Full or legal name', (string) ($s['legal_name'] ?? ''), ['hint' => 'For the copyright line and emails, for example “Example Services LLC”. Leave empty to use the site name.'])
         . text_field('contact_email', 'Public contact email', (string) ($s['contact_email'] ?? ''), ['type' => 'email', 'error' => $errors['contact_email'] ?? null])
         . text_field('contact_phone', 'Public phone number', (string) ($s['contact_phone'] ?? ''), ['type' => 'tel', 'hint' => 'Written the way you want it read out, for example 555-010-0100.'])
         . text_field('contact_page', 'Contact page address', (string) ($s['contact_page'] ?? '/contact/'), ['error' => $errors['contact_page'] ?? null, 'hint' => 'For example /contact/'])
-        . (feature_on('spanish') ? text_field('contact_page_es', 'Spanish contact page address', (string) ($s['contact_page_es'] ?? '/es/contacto/'), ['error' => $errors['contact_page_es'] ?? null]) : '')
+        . (second_lang_on() ? text_field('contact_page_es', second_lang_name() . ' contact page address', (string) ($s['contact_page_es'] ?: contact_path(second_lang())), ['error' => $errors['contact_page_es'] ?? null]) : '')
         . '<h3>Look and time</h3>'
         . timezone_select('timezone', 'Time zone', (string) ($s['timezone'] ?? 'America/New_York'), 'For post dates and times shown on the site.')
         . radio_field('palette', 'Colors', array_map(fn($p) => $p['name'], PALETTES), (string) ($s['palette'] ?? 'purple'), ['hint' => 'Every set keeps the same high contrast in light, dark and high-contrast modes.'])
@@ -1438,7 +1473,9 @@ function settings_save(): never
             'contact_email' => trim((string) ($_POST['contact_email'] ?? '')),
             'contact_phone' => trim((string) ($_POST['contact_phone'] ?? '')),
             'contact_page' => trim((string) ($_POST['contact_page'] ?? '/contact/')),
-            'contact_page_es' => trim((string) ($_POST['contact_page_es'] ?? ($s['contact_page_es'] ?? '/es/contacto/'))),
+            'contact_page_es' => trim((string) ($_POST['contact_page_es'] ?? ($s['contact_page_es'] ?? ''))),
+            'primary_language' => (string) ($_POST['primary_language'] ?? 'en'),
+            'second_language' => (string) ($_POST['second_language'] ?? ''),
             'timezone' => trim((string) ($_POST['timezone'] ?? 'America/New_York')),
             'palette' => (string) ($_POST['palette'] ?? 'purple'),
             'logo' => trim((string) ($_POST['logo'] ?? '')),
@@ -1447,9 +1484,24 @@ function settings_save(): never
             $errors['contact_email'] = 'Enter the contact email in the right format, like name@example.com.';
         }
         foreach (['contact_page', 'contact_page_es'] as $k) {
-            if (!preg_match('#^/[a-z0-9/-]*$#', $v[$k])) {
+            // The second language's contact page may be left empty: its default is /<code>/contact/ in that language's words.
+            if (($k === 'contact_page' || $v[$k] !== '') && !preg_match('#^/[a-z0-9/-]*$#', $v[$k])) {
                 $errors[$k] = 'Enter a page address on this site, starting with a slash, for example /contact/';
             }
+        }
+        if (!isset(SUPPORTED_LANGUAGES[$v['primary_language']])) {
+            $errors['primary_language'] = 'Choose a language from the list.';
+        }
+        if ($v['second_language'] !== '' && !isset(SUPPORTED_LANGUAGES[$v['second_language']])) {
+            $errors['second_language'] = 'Choose a second language from the list, or none.';
+        } elseif ($v['second_language'] !== '' && $v['second_language'] === $v['primary_language']) {
+            $errors['second_language'] = 'The second language must be different from the language the site is written in.';
+        }
+        // The choice doubles as the "Second language pages" switch. "None" turns the pages off but keeps the
+        // code, so the pages stay recognisable as that language (and come back when it is turned on again).
+        $v['features'] = array_merge((array) ($s['features'] ?? []), ['spanish' => $v['second_language'] !== '']);
+        if ($v['second_language'] === '') {
+            $v['second_language'] = (string) ($s['second_language'] ?? '');
         }
         if (!in_array($v['timezone'], DateTimeZone::listIdentifiers(), true)) {
             $errors['timezone'] = 'Choose a time zone from the list.';

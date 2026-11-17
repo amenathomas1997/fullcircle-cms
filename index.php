@@ -5,15 +5,16 @@
  *   /<slug>/                   any other page
  *   /<parent>/<slug>/          a page inside another page (up to three levels; wrong addresses redirect)
  *   /es/ and /es/<name>/       Spanish pages (files "es" and "es-<name>")
+ *   /es/ and /es/<name>/       second-language pages (files "es" and "es-<name>"; "es" is whatever code Settings chose)
  *   /blog/                     blog posts, newest first (?q= searches, ?page= pages)
  *   /blog/category/<name>/     posts in one category
  *   /blog/<slug>/              one blog post
  *   /blog/feed.xml             RSS feed
  *   /blog/podcast.xml          podcast feed of posts with audio
  *   /resources/                cheat sheets (?q= searches)
- *   /resources/<slug>/         one cheat sheet, also as .docx, .large.docx and .brf (Spanish: Word only)
+ *   /resources/<slug>/         one cheat sheet, also as .docx, .large.docx and .brf (English only for .brf)
  *   /resources/<slug>/quiz/    a practice quiz made from the sheet;  /resources/<slug>/large-print/  printable large print
- *   /es/blog/...               Spanish blog (posts "es-<name>"), /es/guias-rapidas/ Spanish cheat sheets
+ *   /es/blog/...               second-language blog (posts "es-<name>"), /es/guias-rapidas/ its cheat sheets (the words come from its strings)
  *   /search/ and /es/buscar/   search the whole site
  *   /videos/, /success-stories/ and /updates/archive/   videos, success stories and past email updates
  *   /updates/confirm/ and /updates/unsubscribe/   email update sign-up links
@@ -79,7 +80,7 @@ $parts = array_values(array_filter(explode('/', $path), 'strlen'));
 $first = $parts[0] ?? '';
 
 // Parts of the site that are turned off in Settings don't exist.
-if ($first === 'es' && !feature_on('spanish')) {
+if ($first !== '' && $first === second_lang() && !feature_on('spanish')) {
     not_found();
 }
 if ($first === 'resources' && !feature_on('resources')) {
@@ -118,18 +119,18 @@ if (count($parts) === 3 && $first === 'updates' && $parts[1] === 'archive') {
 if ($path === '/updates/confirm/' || $path === '/updates/unsubscribe/') {
     subscription_link($path === '/updates/confirm/' ? 'confirm' : 'unsubscribe');
 }
-if ($first === 'blog' && count($parts) === 2 && slug_lang($parts[1]) === 'es' && $parts[1] !== 'es') {
-    redirect('/es/blog/' . substr($parts[1], 3) . '/');
+if ($first === 'blog' && count($parts) === 2 && is_second_lang(slug_lang($parts[1])) && $parts[1] !== second_lang()) {
+    redirect(blog_base(second_lang()) . slug_without_lang($parts[1]) . '/');
 }
-if ($first === 'es' && in_array($parts[1] ?? '', ['blog', 'buscar', 'guias-rapidas'], true)) {
-    current_lang('es');
+if (is_second_lang($first) && in_array($parts[1] ?? '', ['blog', lang_route('search', $first), lang_route('resources', $first)], true)) {
+    current_lang($first);
     $rest = array_slice($parts, 1);
     match (true) {
-        $rest === ['buscar'] => feature_on('search') ? search_page() : not_found(),
-        $rest === ['guias-rapidas'] => resources_index(),
+        $rest === [lang_route('search')] => feature_on('search') ? search_page() : not_found(),
+        $rest === [lang_route('resources')] => resources_index(),
         $rest === ['blog'] => blog_index(),
         count($rest) === 2 && $rest[1] === 'feed.xml' => rss_feed(),
-        count($rest) === 2 && valid_slug($rest[1]) => blog_post('es-' . $rest[1]),
+        count($rest) === 2 && valid_slug($rest[1]) => blog_post("$first-" . $rest[1]),
         count($rest) === 3 && $rest[1] === 'category' && valid_slug($rest[2]) => blog_index($rest[2]),
         default => not_found(),
     };
@@ -166,12 +167,12 @@ if ($first === 'resources') {
     }
     not_found();
 }
-if ($first === 'es') {
-    current_lang('es');
-    // Features with Spanish addresses (for example /es/eventos/) answer before the plain Spanish pages.
+if (is_second_lang($first)) {
+    current_lang($first);
+    // Features with second-language addresses (for example /es/eventos/) answer before the plain pages.
     run_registered_routes($path, $parts);
     if (count($parts) === 1) {
-        show_page('es', '/es/');
+        show_page($first, "/$first/");
     }
     // Pages inside other pages (lib/features/nested-pages.php): /es/servicios/reiki/, and a page at the wrong address goes to its own.
     if (($slug = page_by_path($parts)) !== null) {
@@ -181,7 +182,7 @@ if ($first === 'es') {
         redirect(page_path($slug));
     }
     if (count($parts) === 2 && valid_slug($parts[1])) {
-        show_page('es-' . $parts[1], "/es/{$parts[1]}/");
+        show_page("$first-{$parts[1]}", "/$first/{$parts[1]}/");
     }
     not_found();
 }
@@ -195,7 +196,7 @@ if (count($parts) === 1) {
     if ($first === 'home') {
         redirect('/');
     }
-    if (valid_slug($first) && slug_lang($first) === 'es') {
+    if (valid_slug($first) && is_second_lang(slug_lang($first))) {
         redirect(page_path($first));
     }
 }
@@ -243,12 +244,9 @@ function not_found(): never
     if (function_exists('log_404')) {
         log_404(current_path());
     }
-    $content = current_lang() === 'es'
-        ? '<h1>No encontramos esa página</h1><p>Es posible que se haya movido.</p><p><a href="/es/">Ir a la página de inicio</a> o <a href="'
-            . h(contact_path('es')) . '">contáctenos</a>.</p>'
-        : '<h1>Page not found</h1><p>Sorry, we couldn’t find that page. It may have moved.</p>'
-            . '<p><a href="/">Go to the home page</a> or <a href="' . h(contact_path()) . '">contact us</a> and we’ll help you find it.</p>';
-    send_html(render_layout(current_lang() === 'es' ? 'Página no encontrada' : 'Page not found', $content), 404);
+    $content = '<h1>' . h(t('not_found_heading')) . '</h1><p>' . h(t('not_found_body')) . '</p>'
+        . '<p><a href="' . h(home_path()) . '">' . h(t('not_found_home')) . '</a>' . h(t('not_found_or')) . '<a href="' . h(contact_path(current_lang())) . '">' . h(t('not_found_contact')) . '</a>' . h(t('not_found_help')) . '.</p>';
+    send_html(render_layout(t('not_found_title'), $content), 404);
 }
 
 /** Drafts are only visible to someone signed in to the control panel, for previewing. */
@@ -308,8 +306,8 @@ function sitemap(): never
     foreach (published_posts() as $post) {
         echo '<url><loc>' . h(site_url(post_url($post))) . '</loc></url>';
     }
-    foreach (['en', 'es'] as $lang) {
-        if ($lang === 'es' && !posts_in_lang('es')) {
+    foreach (array_keys(languages()) as $lang) {
+        if (is_second_lang($lang) && !posts_in_lang($lang)) {
             continue;
         }
         echo '<url><loc>' . h(site_url(blog_base($lang))) . '</loc></url>';

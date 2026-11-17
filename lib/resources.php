@@ -5,9 +5,10 @@
  * document or a braille-ready file. Downloads are made from the page's HTML
  * whenever they're asked for, so they always match the web page.
  *
- * Spanish cheat sheets have addresses starting with "es-" and are listed at
- * /es/guias-rapidas/. They download as Word documents only: the braille
- * translator writes English braille (UEB), not Spanish braille.
+ * Cheat sheets in the site's second language have addresses starting with its
+ * code ("es-") and are listed at /es/guias-rapidas/ (the word comes from the
+ * language's route_resources string). Only English sheets download as braille:
+ * the braille translator writes English braille (UEB).
  */
 
 declare(strict_types=1);
@@ -15,15 +16,13 @@ declare(strict_types=1);
 /** The last line of every downloaded cheat sheet: who it's from and how to reach them. */
 function resource_footer_text(string $lang): string
 {
-    $from = ($lang === 'es' ? 'De ' : 'From ') . site_name() . ', ' . site_host() . '.';
+    $from = sprintf(t_in($lang, 'res_from'), site_name(), site_host());
     $p = contact_phone();
     $e = contact_email();
     if ($p === '' && $e === '') {
         return $from;
     }
-    $how = $lang === 'es'
-        ? ($p !== '' ? "Llame o envíe un mensaje de texto al $p" : '') . ($p !== '' && $e !== '' ? ', o escriba a ' : ($e !== '' ? 'Escriba a ' : '')) . ($e !== '' ? $e : '')
-        : ($p !== '' ? "Call or text $p" : '') . ($p !== '' && $e !== '' ? ', or email ' : ($e !== '' ? 'Email ' : '')) . ($e !== '' ? $e : '');
+    $how = $p !== '' ? sprintf(t_in($lang, 'res_call'), $p) . ($e !== '' ? sprintf(t_in($lang, 'res_or_email'), $e) : '') : sprintf(t_in($lang, 'res_email'), $e);
     return "$from $how.";
 }
 
@@ -39,7 +38,7 @@ function published_resources(?string $lang = null): array
 
 function resources_index_path(?string $lang = null): string
 {
-    return ($lang ?? current_lang()) === 'es' ? '/es/guias-rapidas/' : '/resources/';
+    return lang_route_path('resources', $lang);
 }
 
 function resource_downloads(array $r): string
@@ -47,27 +46,20 @@ function resource_downloads(array $r): string
     $base = '/resources/' . $r['slug'];
     $title = h($r['title']);
     $quiz = count(quiz_rows($r)) >= 4;
-    if (slug_lang($r['slug']) === 'es') {
-        return '<ul class="downloads">'
-            . ($quiz ? '<li><a class="button" href="' . h($base) . '/quiz/">Practique con preguntas<span class="visually-hidden">: ' . $title . '</span></a></li>' : '')
-            . '<li><a class="button button-outline" href="' . h($base) . '.docx" download>Documento de Word<span class="visually-hidden">: ' . $title . '</span></a></li>'
-            . '<li><a class="button button-outline" href="' . h($base) . '.large.docx" download>Word en letra grande<span class="visually-hidden">: ' . $title . '</span></a></li>'
-            . '<li><a class="button button-outline" href="' . h($base) . '/large-print/">Página para imprimir en letra grande<span class="visually-hidden">: ' . $title . '</span></a></li>'
-            . '</ul>';
-    }
     return '<ul class="downloads">'
-        . ($quiz ? '<li><a class="button" href="' . h($base) . '/quiz/">Practice quiz<span class="visually-hidden">: ' . $title . '</span></a></li>' : '')
-        . '<li><a class="button button-outline" href="' . h($base) . '.docx" download>Word document<span class="visually-hidden">: ' . $title . '</span></a></li>'
-        . '<li><a class="button button-outline" href="' . h($base) . '.large.docx" download>Large print Word<span class="visually-hidden">: ' . $title . '</span></a></li>'
-        . '<li><a class="button button-outline" href="' . h($base) . '/large-print/">Large print page to print<span class="visually-hidden">: ' . $title . '</span></a></li>'
-        . '<li><a class="button button-outline" href="' . h($base) . '.brf" download>Braille file (BRF)<span class="visually-hidden">: ' . $title . '</span></a></li>'
+        . ($quiz ? '<li><a class="button" href="' . h($base) . '/quiz/">' . h(t('res_quiz')) . '<span class="visually-hidden">: ' . $title . '</span></a></li>' : '')
+        . '<li><a class="button button-outline" href="' . h($base) . '.docx" download>' . h(t('res_docx')) . '<span class="visually-hidden">: ' . $title . '</span></a></li>'
+        . '<li><a class="button button-outline" href="' . h($base) . '.large.docx" download>' . h(t('res_large_docx')) . '<span class="visually-hidden">: ' . $title . '</span></a></li>'
+        . '<li><a class="button button-outline" href="' . h($base) . '/large-print/">' . h(t('res_large_page')) . '<span class="visually-hidden">: ' . $title . '</span></a></li>'
+        // Braille is English only: the translator writes UEB.
+        . (slug_lang($r['slug']) === 'en' ? '<li><a class="button button-outline" href="' . h($base) . '.brf" download>' . h(t('res_brf')) . '<span class="visually-hidden">: ' . $title . '</span></a></li>' : '')
         . '</ul>';
 }
 
 function resource_list_html(array $items): string
 {
     if (!$items) {
-        return '<p>' . (current_lang() === 'es' ? 'Todavía no hay guías rápidas.' : 'No cheat sheets yet.') . '</p>';
+        return '<p>' . h(t('res_none')) . '</p>';
     }
     $out = '<ul class="resource-list">';
     foreach ($items as $r) {
@@ -96,22 +88,23 @@ function resources_index(): never
             }
             return true;
         }));
-        $status = '<p role="status">' . (count($items) ? count($items) . ' ' . (count($items) === 1 ? 'cheat sheet mentions' : 'cheat sheets mention') . ' “' . h($q) . '”.'
-            : 'No cheat sheets mention “' . h($q) . '”. Try a different word, like the name of a key or app.') . '</p>';
+        $status = '<p role="status">' . h(count($items) ? sprintf(t(count($items) === 1 ? 'res_found_one' : 'res_found_many'), ...(count($items) === 1 ? [$q] : [count($items), $q]))
+            : sprintf(t('res_found_none'), $q)) . '</p>';
     }
-    $out = '<h1>Cheat sheets</h1>'
-        . '<p class="lede">Keyboard shortcuts for screen readers and the apps you use at work. Read them here, or download them as a Word document or a braille-ready file for your notetaker or embosser.</p>'
-        . '<form class="search-form" role="search" method="get" action="/resources/">'
-        . '<div class="field"><label for="resource-search">Search the cheat sheets</label>'
-        . '<p class="hint" id="resource-search-hint">For example “say all”, “headings” or “Slack”.</p>'
+    $out = '<h1>' . h(t('res_title')) . '</h1>'
+        . '<p class="lede">' . h(t('res_lede')) . '</p>'
+        . '<form class="search-form" role="search" method="get" action="' . h(resources_index_path()) . '">'
+        . '<div class="field"><label for="resource-search">' . h(t('res_search')) . '</label>'
+        . '<p class="hint" id="resource-search-hint">' . h(t('res_search_hint')) . '</p>'
         . '<input type="search" id="resource-search" name="q" value="' . h($q) . '" aria-describedby="resource-search-hint"></div>'
-        . '<button type="submit" class="button">Search</button></form>'
+        . '<button type="submit" class="button">' . h(t('search')) . '</button></form>'
         . $status . resource_list_html($items)
-        . ($q !== '' ? '<p><a href="/resources/">See all cheat sheets</a></p>' : '');
-    send_html(render_layout('Cheat sheets', $out, 'Cheat sheets from ' . site_name() . ', as web pages, Word documents and braille files.',
-        null, $q === '' && published_resources('es') ? resources_index_path('es') : null));
+        . ($q !== '' ? '<p><a href="' . h(resources_index_path()) . '">' . h(t('res_see_all')) . '</a></p>' : '');
+    send_html(render_layout(t('res_title'), $out, t('res_description'),
+        null, $q === '' && published_resources(other_lang()) ? resources_index_path(other_lang()) : null));
 }
 
+/** The Spanish list has its own page: no search form, and a note that braille files are in English. */
 function resources_index_es(): never
 {
     $out = '<h1>Guías rápidas</h1>'
@@ -137,9 +130,9 @@ function resource_page(string $slug): never
     $r = resource_for($slug);
     $out = '<article><h1>' . h($r['title']) . '</h1>'
         . '<p class="lede">' . h($r['summary'] ?? '') . '</p>'
-        . '<h2 class="visually-hidden">' . (current_lang() === 'es' ? 'Descargar' : 'Download') . '</h2>' . resource_downloads($r)
+        . '<h2 class="visually-hidden">' . h(t('res_download')) . '</h2>' . resource_downloads($r)
         . '<div class="resource-body">' . $r['body'] . '</div></article>'
-        . '<p><a href="' . h(resources_index_path()) . '">' . (current_lang() === 'es' ? 'Todas las guías rápidas' : 'All cheat sheets') . '</a></p>';
+        . '<p><a href="' . h(resources_index_path()) . '">' . h(t('res_all')) . '</a></p>';
     $otherPath = null;
     if (($other = (string) ($r['translation'] ?? '')) !== '' && ($o = get_item('resources', $other)) && ($o['status'] ?? '') === 'published') {
         $otherPath = '/resources/' . $other . '/';
@@ -162,20 +155,19 @@ function resource_docx(string $slug, bool $large = false): never
 function resource_large_print(string $slug): never
 {
     $r = resource_for($slug);
-    $es = current_lang() === 'es';
     $out = '<div class="large-print"><h1>' . h($r['title']) . '</h1><p>' . h($r['summary'] ?? '') . '</p>'
-        . '<p class="no-print"><button type="button" class="button" data-print>' . ($es ? 'Imprimir esta página' : 'Print this page') . '</button> '
-        . ($es ? 'O use el comando Imprimir de su navegador (Control + P, o Comando + P en Mac).' : 'Or use your browser’s Print command (Control + P, or Command + P on a Mac).') . '</p>'
+        . '<p class="no-print"><button type="button" class="button" data-print>' . h(t('res_print')) . '</button> '
+        . h(t('res_print_hint')) . '</p>'
         . $r['body'] . '</div>'
-        . '<p class="no-print"><a href="/resources/' . h($slug) . '/">' . ($es ? 'Volver a la guía' : 'Back to the cheat sheet') . '</a></p>';
-    send_html(render_layout(($es ? 'Letra grande: ' : 'Large print: ') . $r['title'], $out, (string) ($r['summary'] ?? '')));
+        . '<p class="no-print"><a href="/resources/' . h($slug) . '/">' . h(t('res_back')) . '</a></p>';
+    send_html(render_layout(t('res_large_prefix') . $r['title'], $out, (string) ($r['summary'] ?? '')));
 }
 
 /** The cheat sheet in uncontracted braille, 40 cells by 25 lines. */
 function resource_brf(string $slug): never
 {
     $r = resource_for($slug);
-    if (slug_lang($slug) === 'es') {
+    if (slug_lang($slug) !== 'en') {
         not_found();
     }
     header('Content-Type: text/plain; charset=us-ascii');

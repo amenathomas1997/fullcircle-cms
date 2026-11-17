@@ -36,7 +36,7 @@ function page_parent(array|string $page): ?string
         }
     }
     $parent = (string) ($page['parent'] ?? '');
-    if ($parent === '' || $parent === $slug || !valid_slug($parent) || in_array($parent, ['home', 'es'], true)
+    if ($parent === '' || $parent === $slug || !valid_slug($parent) || in_array($parent, ['home', second_lang()], true)
         || slug_lang($parent) !== slug_lang($slug) || !get_item('pages', $parent)) {
         return null;
     }
@@ -75,7 +75,7 @@ function page_parent_path(string $slug): string
     if (!valid_slug($slug) || !($ancestors = page_ancestors($slug))) {
         return '';
     }
-    $path = slug_lang($slug) === 'es' ? '/es/' : '/';
+    $path = home_path(slug_lang($slug));
     foreach ($ancestors as $ancestor) {
         $path .= page_segment($ancestor) . '/';
     }
@@ -85,7 +85,7 @@ function page_parent_path(string $slug): string
 /** The page's own part of its address: "reiki" for the slug "es-reiki". */
 function page_segment(string $slug): string
 {
-    return slug_lang($slug) === 'es' ? substr($slug, 3) : $slug;
+    return slug_without_lang($slug);
 }
 
 /** Pages whose parent is this page, in title order. */
@@ -126,8 +126,8 @@ function page_subtree_height(string $slug, int $depth = 0): int
 function page_slug_for_parts(array $parts): ?string
 {
     $prefix = '';
-    if (($parts[0] ?? '') === 'es') {
-        $prefix = 'es-';
+    if (is_second_lang($parts[0] ?? '')) {
+        $prefix = second_lang() . '-';
         $parts = array_slice($parts, 1);
     }
     if (!$parts || count($parts) > PAGE_MAX_LEVEL) {
@@ -162,7 +162,7 @@ function breadcrumbs_html(string $slug): string
         return '';
     }
     $lang = slug_lang($slug);
-    $trail = [[$lang === 'es' ? '/es/' : '/', t('home')]];
+    $trail = [[home_path($lang), t('home')]];
     foreach ($ancestors as $ancestor) {
         $trail[] = [page_path($ancestor), (string) (get_item('pages', $ancestor)['title'] ?? $ancestor)];
     }
@@ -187,7 +187,7 @@ function breadcrumbs_html(string $slug): string
 function parent_field(array $v, ?string $origSlug): string
 {
     $slug = (string) ($v['slug'] ?: ($origSlug ?? ''));
-    if ($slug === 'home' || $slug === 'es') {
+    if ($slug === 'home' || $slug === second_lang()) {
         return '';
     }
     $lang = slug_lang($slug);
@@ -197,7 +197,7 @@ function parent_field(array $v, ?string $origSlug): string
     $height = $origSlug !== null ? page_subtree_height($origSlug) : 1;
     $options = '<option value="">None (a top-level page)</option>';
     foreach (all_items('pages') as $p) {
-        if (slug_lang($p['slug']) !== $lang || in_array($p['slug'], ['home', 'es'], true) || in_array($p['slug'], $excluded, true)
+        if (slug_lang($p['slug']) !== $lang || in_array($p['slug'], ['home', second_lang()], true) || in_array($p['slug'], $excluded, true)
             || page_level($p['slug']) + $height > PAGE_MAX_LEVEL) {
             continue;
         }
@@ -206,8 +206,8 @@ function parent_field(array $v, ?string $origSlug): string
     }
     $hint = 'Put this page inside another one: its address then starts with the parent’s, for example <code>/services/reiki/</code>. '
         . 'Pages can be nested up to three levels deep. '
-        . ($lang === 'es' ? 'A Spanish page can only go inside another Spanish page.'
-            : 'The list shows English pages; save a Spanish address (starting with <code>es-</code>) first to choose a Spanish parent.');
+        . (is_second_lang($lang) ? 'A ' . h(second_lang_name()) . ' page can only go inside another ' . h(second_lang_name()) . ' page.'
+            : (second_lang() !== '' ? 'The list shows ' . h(language_name(primary_lang())) . ' pages; save a ' . h(second_lang_name()) . ' address (starting with <code>' . h(second_lang()) . '-</code>) first to choose a ' . h(second_lang_name()) . ' parent.' : ''));
     return '<div class="field"><label for="parent">Parent page</label>'
         . '<p class="hint" id="parent-hint">' . $hint . '</p>'
         . '<select id="parent" name="parent" aria-describedby="parent-hint">' . $options . '</select></div>';
@@ -216,7 +216,7 @@ function parent_field(array $v, ?string $origSlug): string
 /** The posted parent for a page about to be saved as $slug: the slug when it is allowed, "" otherwise. */
 function clean_parent(string $slug, string $parent, ?string $origSlug): string
 {
-    if ($parent === '' || !valid_slug($parent) || $parent === $slug || in_array($parent, ['home', 'es'], true)
+    if ($parent === '' || !valid_slug($parent) || $parent === $slug || in_array($parent, ['home', second_lang()], true)
         || in_array($slug, ['home', 'es'], true) || slug_lang($parent) !== slug_lang($slug) || !get_item('pages', $parent)) {
         return '';
     }

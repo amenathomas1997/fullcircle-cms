@@ -43,7 +43,7 @@ register_cron('daily', fn () => events_tidy());
 5. **Settings, never code.** Site-specific values come from `settings()` (public, in content/settings.json) or `config()` (secrets, in data/config.php). Use `site_name()`, `contact_email()`, `contact_phone()`, `contact_path()`, `site_url()`, `site_host()`.
 6. **Files.** Write with `write_json()` / `write_file()` (atomic). Keep data under `DATA_DIR` (private) or `CONTENT_DIR` (content that belongs to the site). Validate slugs with `valid_slug()` before touching a path.
 7. **Email** goes through `send_mail_to()` or `send_mail_owner()`; never call a transport directly.
-8. **Language.** Public strings in both English and Spanish: add keys to `lib/i18n.php` and use `t('key')`; check `current_lang()`.
+8. **Language.** Public strings in English and Spanish: add keys to `lib/languages/en.php` and `lib/languages/es.php` and use `t('key')`. Never compare with `'es'` or write `/es/`: a site chooses its second language, so ask `is_second_lang()`, `second_lang()`, `home_path()` and `lang_route_path()` (see `docs/languages.md`).
 9. **strict_types** at the top of every PHP file; PHP 8.1 syntax; no Composer packages unless the feature already needs one (only the assistant does).
 10. **Test on a fresh install:** `php tools/setup.php --yes` with `SETUP_*` variables, `php -S localhost:8000 router.php`, then exercise the pages and screens, check `php -l` on every file and that the dev server log shows no warnings.
 

@@ -8,12 +8,18 @@
 
 declare(strict_types=1);
 
-/** Create the starter pages, a first blog post, the menu and the footer (as Footer screen groups). Does nothing if pages already exist. */
-function create_starter_content(bool $spanish = false): void
+/**
+ * Create the starter pages, a first blog post, the menu and the footer (as Footer screen groups). Does nothing if pages already exist.
+ * $second is the code of the second language, or empty for none. Spanish gets pages written in Spanish; any other
+ * language gets the same pages in English with a note that they are waiting to be translated.
+ */
+function create_starter_content(string $second = ''): void
 {
     if (all_items('pages')) {
         return;
     }
+    $second = isset(SUPPORTED_LANGUAGES[$second]) && $second !== primary_lang() ? $second : '';
+    $spanish = $second === 'es';
     $s = settings();
     $name = (string) $s['site_name'];
     $contactList = [];
@@ -86,6 +92,20 @@ function create_starter_content(bool $spanish = false): void
         $pages['contact']['translation'] = 'es-contacto';
         $pages['accessibility']['translation'] = 'es-accesibilidad';
         $pages['privacy']['translation'] = 'es-privacidad';
+    } elseif ($second !== '') {
+        // The same pages, in English for now, each with a note asking for a translation (nothing is machine translated).
+        $langName = language_name($second);
+        $note = '<p><strong>This page is waiting to be translated into ' . h($langName) . '.</strong> Replace this text with the ' . h($langName) . ' version, then remove this note.</p>';
+        $contact = lang_route('contact', $second);
+        $home = "/$second/";
+        foreach (['home' => $second, 'about' => "$second-about", 'contact' => "$second-$contact", 'accessibility' => "$second-accessibility", 'privacy' => "$second-privacy"] as $en => $slug) {
+            $copy = $pages[$en];
+            $copy['translation'] = $en;
+            // Links inside the copied pages point at the second-language side.
+            $copy['body'] = $note . str_replace(['href="/contact/"', 'href="/about/"', 'href="/blog/"'], ['href="' . $home . $contact . '/"', 'href="' . $home . 'about/"', 'href="' . $home . 'blog/"'], $copy['body']);
+            $pages[$slug] = $copy;
+            $pages[$en]['translation'] = $slug;
+        }
     }
     foreach ($pages as $slug => $page) {
         save_item('pages', $slug, $page + ['status' => 'published']);
@@ -105,10 +125,18 @@ function create_starter_content(bool $spanish = false): void
     $menuEs = $spanish ? [['label' => 'Inicio', 'url' => '/es/'], ['label' => 'Acerca de', 'url' => '/es/acerca-de/'], ['label' => 'Blog', 'url' => '/es/blog/'], ['label' => 'Contacto', 'url' => '/es/contacto/']] : [];
     $footer = ['contact' => true, 'small_print' => '', 'groups' => [['heading' => 'More', 'links' => array_merge(
         [['label' => 'About', 'url' => '/about/'], ['label' => 'Blog', 'url' => '/blog/'], ['label' => 'Accessibility statement', 'url' => '/accessibility/'], ['label' => 'Privacy', 'url' => '/privacy/']],
-        $spanish ? [['label' => 'En español', 'url' => '/es/']] : [])]]];
+        $spanish ? [['label' => 'En español', 'url' => '/es/']] : ($second !== '' ? [['label' => language_name($second), 'url' => "/$second/"]] : []))]]];
     $footerEs = $spanish ? ['contact' => true, 'small_print' => '', 'groups' => [['heading' => 'Más', 'links' => [
         ['label' => 'Acerca de', 'url' => '/es/acerca-de/'], ['label' => 'Blog', 'url' => '/es/blog/'], ['label' => 'Declaración de accesibilidad', 'url' => '/es/accesibilidad/'],
         ['label' => 'Privacidad', 'url' => '/es/privacidad/'], ['label' => 'English', 'url' => '/']]]]] : null;
+    if ($second !== '' && !$spanish) {
+        $home = "/$second/";
+        $contact = lang_route('contact', $second);
+        $menuEs = [['label' => 'Home', 'url' => $home], ['label' => 'About', 'url' => $home . 'about/'], ['label' => 'Blog', 'url' => $home . 'blog/'], ['label' => 'Contact', 'url' => $home . $contact . '/']];
+        $footerEs = ['contact' => true, 'small_print' => '', 'groups' => [['heading' => 'More', 'links' => [
+            ['label' => 'About', 'url' => $home . 'about/'], ['label' => 'Blog', 'url' => $home . 'blog/'], ['label' => 'Accessibility statement', 'url' => $home . 'accessibility/'],
+            ['label' => 'Privacy', 'url' => $home . 'privacy/'], ['label' => 'English', 'url' => '/']]]]];
+    }
     save_settings(array_merge(settings(), ['menu' => $menu, 'menu_es' => $menuEs, 'footer_groups' => $footer, 'footer_groups_es' => $footerEs,
-        'contact_page' => '/contact/', 'contact_page_es' => '/es/contacto/']));
+        'contact_page' => '/contact/', 'contact_page_es' => $second !== '' ? lang_route_path('contact', $second) : '']));
 }

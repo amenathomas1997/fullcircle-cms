@@ -138,7 +138,7 @@ function html_to_docx(string $title, string $html, string $intro = '', string $l
 {
     // Sizes are in half-points: 28 is 14 point; large print is 24 point text with bigger headings.
     [$text, $h1, $h2, $h3] = $large ? [48, 64, 56, 52] : [28, 44, 34, 30];
-    $langTag = $lang === 'es' ? 'es-US' : 'en-US';
+    $langTag = language_tag($lang);
     $dom = new DOMDocument();
     libxml_use_internal_errors(true);
     $dom->loadHTML('<?xml encoding="utf-8"?><div id="root">' . $html . '</div>', LIBXML_NOERROR | LIBXML_NOWARNING);

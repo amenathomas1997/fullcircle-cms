@@ -291,7 +291,9 @@ function settings(bool $refresh = false): array
             'contact_email' => '',
             'contact_phone' => '',
             'contact_page' => '/contact/',
-            'contact_page_es' => '/es/contacto/',
+            'contact_page_es' => '',
+            'primary_language' => 'en',
+            'second_language' => '',
             'timezone' => 'America/New_York',
             'palette' => 'purple',
             'logo' => '',
@@ -349,11 +351,12 @@ function contact_phone(): string
     return trim((string) (settings()['contact_phone'] ?? ''));
 }
 
-/** The contact page for a language, from Settings. */
-function contact_path(string $lang = 'en'): string
+/** The contact page for a language (the primary one unless given), from Settings. */
+function contact_path(?string $lang = null): string
 {
     $s = settings();
-    return (string) ($lang === 'es' ? ($s['contact_page_es'] ?: ($s['contact_page'] ?: '/contact/')) : ($s['contact_page'] ?: '/contact/'));
+    $lang ??= primary_lang();
+    return (string) (is_second_lang($lang) ? ($s['contact_page_es'] ?: lang_route_path('contact', $lang)) : ($s['contact_page'] ?: '/contact/'));
 }
 
 /** "call or text 555-0100 or email hello@example.com", in plain words, for emails and error messages. */
@@ -363,22 +366,13 @@ function contact_words(?string $lang = null): string
     $p = contact_phone();
     $e = contact_email();
     $parts = [];
-    if ($lang === 'es') {
-        if ($p !== '') {
-            $parts[] = "llame o envíe un mensaje de texto al $p";
-        }
-        if ($e !== '') {
-            $parts[] = "escriba a $e";
-        }
-        return $parts ? implode(' o ', $parts) : 'use la página de contacto';
-    }
     if ($p !== '') {
-        $parts[] = "call or text $p";
+        $parts[] = sprintf(t_in($lang, 'contact_call'), $p);
     }
     if ($e !== '') {
-        $parts[] = "email $e";
+        $parts[] = sprintf(t_in($lang, 'contact_mail'), $e);
     }
-    return $parts ? implode(' or ', $parts) : 'use the contact page';
+    return $parts ? implode(t_in($lang, 'contact_or'), $parts) : t_in($lang, 'contact_none');
 }
 
 /** The same, with tel: and mailto: links, for web pages. */
@@ -390,17 +384,17 @@ function contact_html(?string $lang = null): string
     $parts = [];
     if ($p !== '') {
         $link = '<a href="tel:' . h(preg_replace('/[^0-9+]/', '', $p)) . '">' . h($p) . '</a>';
-        $parts[] = $lang === 'es' ? "llame o envíe un mensaje de texto al $link" : "call or text $link";
+        $parts[] = sprintf(t_in($lang, 'contact_call'), $link);
     }
     if ($e !== '') {
         $link = '<a href="mailto:' . h($e) . '">' . h($e) . '</a>';
-        $parts[] = $lang === 'es' ? "escriba a $link" : "email $link";
+        $parts[] = sprintf(t_in($lang, 'contact_mail'), $link);
     }
     if (!$parts) {
-        $link = '<a href="' . h(contact_path($lang)) . '">' . ($lang === 'es' ? 'la página de contacto' : 'the contact page') . '</a>';
-        return $lang === 'es' ? "use $link" : "use $link";
+        $link = '<a href="' . h(contact_path($lang)) . '">' . h(t_in($lang, 'contact_page_words')) . '</a>';
+        return sprintf(t_in($lang, 'contact_use'), $link);
     }
-    return implode($lang === 'es' ? ' o ' : ' or ', $parts);
+    return implode(t_in($lang, 'contact_or'), $parts);
 }
 
 /** Is an optional part of the site turned on? */
@@ -479,12 +473,12 @@ function site_url(string $path = '/'): string
 function render_menu(string $path): string
 {
     $items = '';
-    $menu = current_lang() === 'es' && settings()['menu_es'] ? settings()['menu_es'] : settings()['menu'];
+    $menu = is_second_lang() && settings()['menu_es'] ? settings()['menu_es'] : settings()['menu'];
     foreach ($menu as $link) {
         $url = (string) ($link['url'] ?? '');
         // "page" for this exact page; "true" when we're somewhere inside that section (a blog post under Blog).
         $current = $url === $path ? 'page'
-            : ($url !== '/' && $url !== '/es/' && str_starts_with($url, '/') && str_starts_with($path, $url) ? 'true' : '');
+            : ($url !== '/' && $url !== home_path(second_lang()) && str_starts_with($url, '/') && str_starts_with($path, $url) ? 'true' : '');
         $items .= '<li><a href="' . h($url) . '"' . ($current !== '' ? ' aria-current="' . $current . '"' : '') . '>'
             . h($link['label'] ?? '') . '</a></li>';
     }
@@ -514,16 +508,16 @@ function render_display_options(): string
         . '</div></div>';
 }
 
-/** Link to the same page in the other language, when there is one. */
+/** Link to the same page in the other language, when there is one (or to that language's home page). */
 function render_language_switch(?string $otherPath): string
 {
-    $other = current_lang() === 'es' ? 'en' : 'es';
-    $hasSpanish = (bool) get_item('pages', 'es');
-    if ($otherPath === null && !$hasSpanish) {
+    $other = other_lang();
+    $hasSecond = second_lang() !== '' && get_item('pages', second_lang());
+    if ($otherPath === null && !$hasSecond) {
         return '';
     }
-    $otherPath ??= $other === 'es' ? '/es/' : '/';
-    return '<a class="language-switch" href="' . h($otherPath) . '" lang="' . $other . '" hreflang="' . $other . '">' . h(LANGUAGES[$other]) . '</a>';
+    $otherPath ??= home_path($other);
+    return '<a class="language-switch" href="' . h($otherPath) . '" lang="' . $other . '" hreflang="' . $other . '">' . h(language_name($other)) . '</a>';
 }
 
 /**
@@ -542,7 +536,7 @@ function render_layout(string $title, string $content, string $description = '',
     $lang = current_lang();
     $alternates = '';
     if ($otherPath !== null) {
-        $other = $lang === 'es' ? 'en' : 'es';
+        $other = other_lang($lang);
         $alternates = '<link rel="alternate" hreflang="' . $lang . '" href="' . h(site_url($path)) . '">'
             . '<link rel="alternate" hreflang="' . $other . '" href="' . h(site_url($otherPath)) . '">';
     }
@@ -556,15 +550,15 @@ function render_layout(string $title, string $content, string $description = '',
         '{{description}}' => h($description !== '' ? $description : $s['description']),
         '{{canonical}}' => h(site_url($path)),
         '{{menu}}' => render_menu($path),
-        '{{footer}}' => function_exists('render_footer') ? render_footer($lang) : ($lang === 'es' && $s['footer_html_es'] !== '' ? $s['footer_html_es'] : $s['footer_html']),
+        '{{footer}}' => function_exists('render_footer') ? render_footer($lang) : (is_second_lang($lang) && $s['footer_html_es'] !== '' ? $s['footer_html_es'] : $s['footer_html']),
         '{{lang}}' => $lang,
-        '{{home_url}}' => $lang === 'es' ? '/es/' : '/',
+        '{{home_url}}' => home_path($lang),
         '{{skip_link}}' => h(t('skip')),
         '{{menu_label}}' => h(t('menu_label')),
         '{{display_options}}' => render_display_options(),
         '{{language_switch}}' => feature_on('spanish') ? render_language_switch($otherPath) : '',
         '{{alternates}}' => $alternates,
-        '{{search_link}}' => feature_on('search') ? '<a class="search-link" href="' . (current_lang() === 'es' ? '/es/buscar/' : '/search/') . '">' . h(t('site_search')) . '</a>' : '',
+        '{{search_link}}' => feature_on('search') ? '<a class="search-link" href="' . lang_route_path('search') . '">' . h(t('site_search')) . '</a>' : '',
         '{{logo}}' => logo_html(),
         '{{icon}}' => ($logo = trim((string) ($s['logo'] ?? ''))) !== '' ? '<link rel="icon" href="' . h($logo) . '"><link rel="apple-touch-icon" href="' . h($logo) . '">' : '',
         '{{og_image}}' => $logo !== '' ? '<meta property="og:image" content="' . h(site_url($logo)) . '">' : '',
@@ -583,7 +577,7 @@ function render_layout(string $title, string $content, string $description = '',
     $html = str_replace(
         ['/assets/css/site.css"', '/assets/js/site.js"'],
         ['/assets/css/site.css?v=' . (@filemtime(STYLESHEET) ?: 1) . '"', '/assets/js/site.js?v=' . (@filemtime(ROOT . '/assets/js/site.js') ?: 1) . '"'],
-        layout_template()
+        html_dir(layout_template(), $lang)
     );
     if (!empty($GLOBALS['layout_banner'])) {
         // A review link: a banner above the content, and search engines are told to stay away.
