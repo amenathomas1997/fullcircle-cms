@@ -574,6 +574,10 @@ function render_layout(string $title, string $content, string $description = '',
         '{{year}}' => date('Y'),
         '{{content}}' => $content,
     ];
+    foreach (registered('placeholders') as $placeholder => $fn) {
+        $replace[$placeholder] = (string) $fn();
+    }
+    $replace = apply_filters('layout_replacements', $replace);
     // {{content}} goes last so text inside a page that looks like a placeholder is left alone.
     // The stylesheet address changes whenever it is edited, so visitors never see an old cached copy.
     $html = str_replace(

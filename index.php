@@ -94,7 +94,7 @@ if ($path === '/health.txt') {
 }
 if ($path === '/robots.txt') {
     header('Content-Type: text/plain; charset=utf-8');
-    echo "User-agent: *\nDisallow: /admin/\n\nSitemap: " . site_url('/sitemap.xml') . "\n";
+    echo apply_filters('robots', "User-agent: *\nDisallow: /admin/\n\nSitemap: " . site_url('/sitemap.xml') . "\n");
     exit;
 }
 if ($path === '/search/') {

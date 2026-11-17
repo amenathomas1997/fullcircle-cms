@@ -21,13 +21,18 @@
  *       Work for tools/send-updates.php (every 10 minutes) and tools/check-links.php (hourly, and daily after 6 am).
  *   register_item_hook('before_save' | 'after_save' | 'after_delete', fn (string $type, string $slug, array &$data): void => ...)
  *       Runs around save_item() and delete_item().
+ *   register_placeholder('{{my_link}}', fn (): string => ...)
+ *       A placeholder a site's layout template can use; filled on every page.
+ *   register_filter('organization', fn (array $org): array => ...)
+ *       Change a value the core builds before it is used. Names so far: 'organization' (the schema.org
+ *       data on every page), 'layout_replacements' (every template placeholder), 'robots' (robots.txt text).
  *
  * Everything registered is kept in $GLOBALS['registry'] and read by the core at the right moment.
  */
 
 declare(strict_types=1);
 
-$GLOBALS['registry'] = ['routes' => [], 'shortcodes' => [], 'admin' => [], 'settings' => [], 'cards' => [], 'features' => [], 'cron' => [], 'items' => []];
+$GLOBALS['registry'] = ['routes' => [], 'shortcodes' => [], 'admin' => [], 'settings' => [], 'cards' => [], 'features' => [], 'cron' => [], 'items' => [], 'filters' => [], 'placeholders' => []];
 
 function register_route(callable $handler): void
 {
@@ -67,6 +72,25 @@ function register_cron(string $when, callable $job): void
 function register_item_hook(string $event, callable $fn): void
 {
     $GLOBALS['registry']['items'][$event][] = $fn;
+}
+
+function register_placeholder(string $placeholder, callable $fn): void
+{
+    $GLOBALS['registry']['placeholders'][$placeholder] = $fn;
+}
+
+function register_filter(string $name, callable $fn): void
+{
+    $GLOBALS['registry']['filters'][$name][] = $fn;
+}
+
+/** Pass a value through every filter registered under $name. */
+function apply_filters(string $name, mixed $value): mixed
+{
+    foreach (registered('filters')[$name] ?? [] as $fn) {
+        $value = $fn($value);
+    }
+    return $value;
 }
 
 /* ---------- Read by the core ---------- */

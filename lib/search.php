@@ -144,6 +144,7 @@ function structured_data_html(): string
     if (contact_email() !== '') {
         $org['email'] = contact_email();
     }
+    $org = apply_filters('organization', $org);
     $items = array_merge([$org], $GLOBALS['structured_data'] ?? []);
     $out = '';
     foreach ($items as $item) {
