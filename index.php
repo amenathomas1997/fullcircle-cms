@@ -221,6 +221,9 @@ function send_html(string $html, int $status = 200): never
 
 function not_found(): never
 {
+    if (function_exists('log_404')) {
+        log_404(current_path());
+    }
     $content = current_lang() === 'es'
         ? '<h1>No encontramos esa página</h1><p>Es posible que se haya movido.</p><p><a href="/es/">Ir a la página de inicio</a> o <a href="'
             . h(contact_path('es')) . '">contáctenos</a>.</p>'

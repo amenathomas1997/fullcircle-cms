@@ -33,3 +33,7 @@ tools/deploy.conf
 scratchpad/
 .claude/
 .DS_Store
+
+# Products for payments are content too.
+content/products/*
+!content/products/.gitkeep
