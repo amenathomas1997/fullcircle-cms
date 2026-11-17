@@ -4,6 +4,8 @@
 // list of blocks (paragraphs, headings, lists, quotes, images), each an ordinary form field with a
 // label. Bold, italic, links and code are typed as plain marks, or added with buttons that wrap the
 // selected text: **bold**, *italic*, [link text](https://example.com), `code`.
+// Section blocks (hero, features, call to action, contact details, two columns) are sets of labelled
+// fields that write a fixed shape of HTML, so a home page never needs hand-written HTML.
 // Anything the blocks can't describe (a table, a shortcode inside a layout, nested lists) becomes
 // an HTML block and is kept exactly as it was, so nothing is ever lost by switching editors.
 (function () {
@@ -11,11 +13,18 @@
 
   var TYPES = {
     p: 'Paragraph', h2: 'Heading 2', h3: 'Heading 3', h4: 'Heading 4',
-    ul: 'Bulleted list', ol: 'Numbered list', quote: 'Quote', faq: 'Question and answer', image: 'Image', html: 'HTML'
+    ul: 'Bulleted list', ol: 'Numbered list', quote: 'Quote', faq: 'Question and answer', image: 'Image',
+    hero: 'Hero (page opening)', features: 'Features or services list', cta: 'Call to action',
+    contact: 'Contact details', columns: 'Two columns', html: 'HTML'
   };
   var INLINE_OK = { STRONG: 1, B: 1, EM: 1, I: 1, A: 1, BR: 1, CODE: 1 };
+  var CONTACT_KEYS = ['phone', 'email', 'address', 'hours'];
+  var CONTACT_LABELS = { en: { phone: 'Phone:', email: 'Email:', address: 'Address:', hours: 'Hours:' },
+    es: { phone: 'Teléfono:', email: 'Correo:', address: 'Dirección:', hours: 'Horario:' } };
 
-  var state = { textarea: null, root: null, blocks: [], live: null, form: null, csrf: '' };
+  var state = { textarea: null, root: null, blocks: [], live: null, form: null, csrf: '',
+    // Alt text help from Claude (lib/features/alt-text.php): filled in by init() once the feature answers.
+    altText: { loaded: false, available: false, known: {} }, altButtons: [] };
 
   /* ---------- HTML to blocks ---------- */
 
@@ -71,26 +80,151 @@
       decorative: img.getAttribute('alt') === '', caption: caption || '' };
   }
 
-  // A <details><summary>question</summary>answer</details> entry, when the answer is paragraphs and simple lists.
-  function parseDetails(n) {
-    var summary = n.firstElementChild;
-    if (!summary || summary.tagName !== 'SUMMARY' || summary.attributes.length || !simpleInline(summary)) return null;
-    var answer = [];
+  // The element children of a node, or null when it also holds text that isn't just spacing.
+  function elementChildren(n) {
+    var out = [];
+    for (var k = 0; k < n.childNodes.length; k++) {
+      var c = n.childNodes[k];
+      if (c.nodeType === 3) { if (c.nodeValue.trim() !== '') return null; continue; }
+      if (c.nodeType === 1) out.push(c);
+    }
+    return out;
+  }
+
+  // Is this element the given tag with no attributes, or with exactly class="className"?
+  function isTag(c, tag, className) {
+    if (!c || c.tagName !== tag) return false;
+    if (className === undefined) return !c.attributes.length;
+    return c.attributes.length === 1 && c.getAttribute('class') === className;
+  }
+
+  // Paragraphs and simple lists inside a container, as marked-up text, or null if there is anything else.
+  // Used by the Question and answer block (skipping its <summary>) and both columns of a Two columns block.
+  function parseRich(container, skip) {
+    var out = [];
     var ok = true;
-    Array.prototype.forEach.call(n.childNodes, function (c) {
-      if (c === summary) return;
+    Array.prototype.forEach.call(container.childNodes, function (c) {
+      if (c === skip) return;
       if (c.nodeType === 3) { if (c.nodeValue.trim() !== '') ok = false; return; }
       if (c.nodeType !== 1) return;
       if (c.tagName === 'P' && !c.attributes.length && simpleInline(c)) {
-        answer.push(inlineToMarks(c).trim());
+        out.push(inlineToMarks(c).trim());
       } else if ((c.tagName === 'UL' || c.tagName === 'OL') && !c.attributes.length && !c.querySelector('ul, ol') &&
           Array.prototype.every.call(c.children, function (li) { return li.tagName === 'LI' && !li.attributes.length && simpleInline(li); })) {
-        answer.push(Array.prototype.map.call(c.children, function (li, k) { return (c.tagName === 'UL' ? '- ' : (k + 1) + '. ') + inlineToMarks(li).trim(); }).join('\n'));
+        out.push(Array.prototype.map.call(c.children, function (li, k) { return (c.tagName === 'UL' ? '- ' : (k + 1) + '. ') + inlineToMarks(li).trim(); }).join('\n'));
       } else {
         ok = false;
       }
     });
-    return ok ? { type: 'faq', question: inlineToMarks(summary).trim(), answer: answer.join('\n\n') } : null;
+    return ok ? out.join('\n\n') : null;
+  }
+
+  // A <details><summary>question</summary>answer</details> entry, when the answer is paragraphs and simple lists.
+  function parseDetails(n) {
+    var summary = n.firstElementChild;
+    if (!summary || summary.tagName !== 'SUMMARY' || summary.attributes.length || !simpleInline(summary)) return null;
+    var answer = parseRich(n, summary);
+    return answer === null ? null : { type: 'faq', question: inlineToMarks(summary).trim(), answer: answer };
+  }
+
+  // <p class="buttons"> holding one or two plain links: the first class="button", the second class="button button-outline".
+  function parseButtons(p, max) {
+    if (!isTag(p, 'P', 'buttons')) return null;
+    var links = elementChildren(p);
+    if (!links || !links.length || links.length > max) return null;
+    var out = [];
+    for (var k = 0; k < links.length; k++) {
+      var a = links[k];
+      if (a.tagName !== 'A' || a.attributes.length !== 2 || !a.getAttribute('href') || a.children.length) return null;
+      if (a.getAttribute('class') !== (k === 0 ? 'button' : 'button button-outline')) return null;
+      out.push({ label: a.textContent.trim(), url: a.getAttribute('href') });
+    }
+    return out;
+  }
+
+  // <section class="hero">: an h1 or h2, an optional opening paragraph, and up to two buttons.
+  function parseHero(n) {
+    var kids = elementChildren(n);
+    if (!kids || !kids.length) return null;
+    var b = { type: 'hero', level: 'h2', heading: '', lede: '', buttons: [{ label: '', url: '' }, { label: '', url: '' }] };
+    var k = 0, buttons;
+    if ((isTag(kids[k], 'H1') || isTag(kids[k], 'H2')) && simpleInline(kids[k])) { b.level = kids[k].tagName.toLowerCase(); b.heading = inlineToMarks(kids[k]).trim(); k++; }
+    if (k < kids.length && isTag(kids[k], 'P', 'lede') && simpleInline(kids[k])) { b.lede = inlineToMarks(kids[k]).trim(); k++; }
+    if (k < kids.length && (buttons = parseButtons(kids[k], 2))) { buttons.forEach(function (x, j) { b.buttons[j] = x; }); k++; }
+    return k === kids.length ? b : null;
+  }
+
+  // <section class="features">: an optional h2, then <ul class="feature-list"> of <li><h3>Title</h3><p>Description</p></li>.
+  function parseFeatures(n) {
+    var kids = elementChildren(n);
+    if (!kids || !kids.length) return null;
+    var b = { type: 'features', heading: '', items: [] };
+    var k = 0;
+    if (isTag(kids[k], 'H2') && simpleInline(kids[k])) { b.heading = inlineToMarks(kids[k]).trim(); k++; }
+    if (k !== kids.length - 1 || !isTag(kids[k], 'UL', 'feature-list')) return null;
+    var items = elementChildren(kids[k]);
+    if (!items || !items.length) return null;
+    for (var j = 0; j < items.length; j++) {
+      if (!isTag(items[j], 'LI')) return null;
+      var parts = elementChildren(items[j]);
+      if (!parts || !parts.length || parts.length > 2 || !isTag(parts[0], 'H3') || !simpleInline(parts[0])) return null;
+      if (parts.length === 2 && (!isTag(parts[1], 'P') || !simpleInline(parts[1]))) return null;
+      b.items.push({ title: inlineToMarks(parts[0]).trim(), text: parts.length === 2 ? inlineToMarks(parts[1]).trim() : '' });
+    }
+    return b;
+  }
+
+  // <section class="cta">: a short h2, one paragraph and one button.
+  function parseCta(n) {
+    var kids = elementChildren(n);
+    if (!kids || !kids.length) return null;
+    var b = { type: 'cta', heading: '', text: '', button: { label: '', url: '' } };
+    var k = 0, buttons;
+    if (isTag(kids[k], 'H2') && simpleInline(kids[k])) { b.heading = inlineToMarks(kids[k]).trim(); k++; }
+    if (k < kids.length && isTag(kids[k], 'P') && simpleInline(kids[k])) { b.text = inlineToMarks(kids[k]).trim(); k++; }
+    if (k < kids.length && (buttons = parseButtons(kids[k], 1))) { b.button = buttons[0]; k++; }
+    return k === kids.length ? b : null;
+  }
+
+  // <section class="contact-details">: an optional h2 and a list of phone, email, address and hours lines.
+  function parseContact(n) {
+    var kids = elementChildren(n);
+    if (!kids || !kids.length) return null;
+    var b = { type: 'contact', heading: '', phone: '', email: '', address: '', hours: '', labels: {} };
+    var k = 0;
+    if (isTag(kids[k], 'H2') && simpleInline(kids[k])) { b.heading = inlineToMarks(kids[k]).trim(); k++; }
+    if (k !== kids.length - 1 || !isTag(kids[k], 'UL')) return null;
+    var items = elementChildren(kids[k]);
+    if (!items || !items.length) return null;
+    var seen = {};
+    for (var j = 0; j < items.length; j++) {
+      var li = items[j];
+      var key = li.attributes.length === 1 ? (li.getAttribute('class') || '').replace(/^contact-/, '') : '';
+      if (li.tagName !== 'LI' || CONTACT_KEYS.indexOf(key) === -1 || seen[key]) return null;
+      seen[key] = true;
+      var copy = li.cloneNode(true);
+      var label = copy.firstElementChild;
+      if (label && isTag(label, 'SPAN', 'contact-label') && !label.children.length) { b.labels[key] = label.textContent.trim(); copy.removeChild(label); }
+      else b.labels[key] = '';
+      if (key === 'phone' || key === 'email') {
+        var rest = elementChildren(copy);
+        var a = rest && rest.length === 1 ? rest[0] : null;
+        if (!a || a.tagName !== 'A' || a.attributes.length !== 1 || a.children.length || (a.getAttribute('href') || '').indexOf(key === 'phone' ? 'tel:' : 'mailto:') !== 0) return null;
+        b[key] = a.textContent.trim();
+      } else {
+        if (copy.querySelector('*:not(br)')) return null;
+        b[key] = inlineToMarks(copy).trim();
+      }
+    }
+    return b;
+  }
+
+  // <div class="columns"> holding exactly two <div>s of paragraphs and simple lists.
+  function parseColumns(n) {
+    var kids = elementChildren(n);
+    if (!kids || kids.length !== 2 || !isTag(kids[0], 'DIV') || !isTag(kids[1], 'DIV')) return null;
+    var left = parseRich(kids[0]), right = parseRich(kids[1]);
+    return left === null || right === null ? null : { type: 'columns', left: left, right: right };
   }
 
   function parse(html) {
@@ -103,7 +237,7 @@
         return;
       }
       if (n.nodeType !== 1) return;
-      var tag = n.tagName, img, faq;
+      var tag = n.tagName, img, found;
       if ((tag === 'H2' || tag === 'H3' || tag === 'H4') && !n.attributes.length && simpleInline(n)) {
         blocks.push({ type: tag.toLowerCase(), text: inlineToMarks(n).trim() });
       } else if (tag === 'P' && !n.attributes.length && (img = onlyImage(n)) && img.attributes.length <= 4) {
@@ -125,8 +259,18 @@
           Array.prototype.every.call(n.children, function (c) { return c.tagName === 'P' || INLINE_OK[c.tagName]; })) {
         var paras = n.querySelectorAll('p');
         blocks.push({ type: 'quote', text: paras.length ? Array.prototype.map.call(paras, function (p) { return inlineToMarks(p).trim(); }).join('\n\n') : inlineToMarks(n).trim() });
-      } else if (tag === 'DETAILS' && !n.attributes.length && (faq = parseDetails(n))) {
-        blocks.push(faq);
+      } else if (tag === 'DETAILS' && !n.attributes.length && (found = parseDetails(n))) {
+        blocks.push(found);
+      } else if (isTag(n, 'SECTION', 'hero') && (found = parseHero(n))) {
+        blocks.push(found);
+      } else if (isTag(n, 'SECTION', 'features') && (found = parseFeatures(n))) {
+        blocks.push(found);
+      } else if (isTag(n, 'SECTION', 'cta') && (found = parseCta(n))) {
+        blocks.push(found);
+      } else if (isTag(n, 'SECTION', 'contact-details') && (found = parseContact(n))) {
+        blocks.push(found);
+      } else if (isTag(n, 'DIV', 'columns') && (found = parseColumns(n))) {
+        blocks.push(found);
       } else {
         blocks.push({ type: 'html', html: n.outerHTML });
       }
@@ -162,6 +306,32 @@
     }).filter(Boolean).join('');
   }
 
+  // One or two button links; a button without a label is left out.
+  function buttonsHtml(buttons) {
+    var links = [];
+    buttons.forEach(function (x) {
+      if (!x || x.label.trim() === '') return;
+      links.push('<a class="' + (links.length ? 'button button-outline' : 'button') + '" href="' + escapeHtml(safeUrl(x.url || '')) + '">' + escapeHtml(x.label.trim()) + '</a>');
+    });
+    return links.length ? '<p class="buttons">' + links.join(' ') + '</p>' : '';
+  }
+
+  // The language of the page being edited, from its address: "es-" pages are Spanish.
+  function pageLang() {
+    var slug = document.getElementById('slug');
+    var v = slug ? slug.value.trim() : '';
+    return v === 'es' || v.indexOf('es-') === 0 ? 'es' : 'en';
+  }
+
+  function contactLabel(b, key) {
+    return b.labels && b.labels[key] !== undefined ? b.labels[key] : CONTACT_LABELS[pageLang()][key];
+  }
+
+  function sectionHtml(className, parts, tag) {
+    var inner = parts.filter(Boolean);
+    return inner.length ? '<' + (tag || 'section') + ' class="' + className + '">\n' + inner.join('\n') + '\n</' + (tag || 'section') + '>' : '';
+  }
+
   function serialize() {
     return state.blocks.map(function (b) {
       switch (b.type) {
@@ -182,6 +352,38 @@
           if (!b.src.trim()) return '';
           var img = '<img src="' + escapeHtml(b.src.trim()) + '" alt="' + (b.decorative ? '' : escapeHtml(b.alt.trim())) + '">';
           return b.caption.trim() ? '<figure>' + img + '<figcaption>' + marksToHtml(b.caption.trim()) + '</figcaption></figure>' : '<p>' + img + '</p>';
+        case 'hero':
+          return sectionHtml('hero', [
+            b.heading.trim() !== '' ? '<' + b.level + '>' + marksToHtml(b.heading.trim()) + '</' + b.level + '>' : '',
+            b.lede.trim() !== '' ? '<p class="lede">' + marksToHtml(b.lede.trim()) + '</p>' : '',
+            buttonsHtml(b.buttons)]);
+        case 'features':
+          var lis = b.items.filter(function (it) { return it.title.trim() !== '' || it.text.trim() !== ''; }).map(function (it) {
+            return '<li><h3>' + marksToHtml(it.title.trim()) + '</h3>' + (it.text.trim() !== '' ? '<p>' + marksToHtml(it.text.trim()) + '</p>' : '') + '</li>';
+          });
+          if (!lis.length) return '';
+          return sectionHtml('features', [b.heading.trim() !== '' ? '<h2>' + marksToHtml(b.heading.trim()) + '</h2>' : '', '<ul class="feature-list">\n' + lis.join('\n') + '\n</ul>']);
+        case 'cta':
+          return sectionHtml('cta', [
+            b.heading.trim() !== '' ? '<h2>' + marksToHtml(b.heading.trim()) + '</h2>' : '',
+            b.text.trim() !== '' ? '<p>' + marksToHtml(b.text.trim()) + '</p>' : '',
+            buttonsHtml([b.button])]);
+        case 'contact':
+          var lines = [];
+          CONTACT_KEYS.forEach(function (key) {
+            var v = (b[key] || '').trim();
+            if (v === '') return;
+            var label = contactLabel(b, key);
+            var body = key === 'phone' ? '<a href="tel:' + escapeHtml(v.replace(/[^0-9+]/g, '')) + '">' + escapeHtml(v) + '</a>'
+              : key === 'email' ? '<a href="mailto:' + escapeHtml(v) + '">' + escapeHtml(v) + '</a>'
+              : v.split('\n').map(function (l) { return escapeHtml(l.trim()); }).filter(Boolean).join('<br>');
+            lines.push('<li class="contact-' + key + '">' + (label !== '' ? '<span class="contact-label">' + escapeHtml(label) + '</span> ' : '') + body + '</li>');
+          });
+          if (!lines.length) return '';
+          return sectionHtml('contact-details', [b.heading.trim() !== '' ? '<h2>' + marksToHtml(b.heading.trim()) + '</h2>' : '', '<ul>\n' + lines.join('\n') + '\n</ul>']);
+        case 'columns':
+          if (b.left.trim() === '' && b.right.trim() === '') return '';
+          return sectionHtml('columns', ['<div>\n' + answerToHtml(b.left) + '\n</div>', '<div>\n' + answerToHtml(b.right) + '\n</div>'], 'div');
         default:
           return b.html.trim();
       }
@@ -253,6 +455,40 @@
     return el('div', { class: 'field' }, [el('label', { for: id, text: label }), markButtons(ta), ta]);
   }
 
+  // A one-line text field for a section block. opts: hint, spellcheck.
+  function lineField(i, name, label, get, set, opts) {
+    opts = opts || {};
+    var id = fieldId(i, name);
+    var attrs = { type: 'text', id: id };
+    if (opts.spellcheck === false) attrs.spellcheck = 'false';
+    if (opts.hint) attrs['aria-describedby'] = id + '-hint';
+    var input = el('input', attrs);
+    input.value = get();
+    input.addEventListener('input', function () { set(input.value); sync(); });
+    return el('div', { class: 'field' }, [el('label', { for: id, text: label }), opts.hint ? el('p', { class: 'hint', id: id + '-hint', text: opts.hint }) : null, input]);
+  }
+
+  // A multi-line text field for a section block, with the formatting buttons unless opts.marks is false.
+  function areaField(i, name, label, rows, get, set, opts) {
+    opts = opts || {};
+    var id = fieldId(i, name);
+    var ta = el('textarea', { id: id, rows: rows, 'aria-describedby': opts.hint ? id + '-hint' : 'blocks-help' });
+    ta.value = get();
+    ta.addEventListener('input', function () { set(ta.value); sync(); });
+    return el('div', { class: 'field' }, [el('label', { for: id, text: label }), opts.hint ? el('p', { class: 'hint', id: id + '-hint', text: opts.hint }) : null,
+      opts.marks === false ? null : markButtons(ta), ta]);
+  }
+
+  // Label and address fields for one button. btn is the object holding label and url; number names it ("Button 1") when there are two.
+  function buttonFields(i, btn, name, number) {
+    var prefix = number ? 'Button ' + number + ' ' : 'Button ';
+    var frag = document.createDocumentFragment();
+    frag.appendChild(lineField(i, name + '-label', prefix + 'label', function () { return btn.label; }, function (v) { btn.label = v; },
+      { hint: number ? 'Leave the label empty to leave this button out.' : 'The words on the button, for example “Book a visit”.' }));
+    frag.appendChild(lineField(i, name + '-url', prefix + 'address', function () { return btn.url; }, function (v) { btn.url = v; }, { spellcheck: false, hint: 'For example /contact/ or https://example.com' }));
+    return frag;
+  }
+
   function renderBlock(b, i) {
     var n = state.blocks.length;
     var titleId = fieldId(i, 'title');
@@ -298,6 +534,22 @@
       section.appendChild(el('div', { class: 'field' }, [el('label', { for: aId, text: 'Answer' }),
         el('p', { class: 'hint', id: aId + '-hint', text: 'A blank line starts a new paragraph. Start lines with "- " for a bulleted list or "1. " for a numbered list.' }),
         markButtons(a), a]));
+    } else if (b.type === 'image') {
+      section.appendChild(imageFields(i, b));
+    } else if (b.type === 'hero') {
+      section.appendChild(heroFields(i, b));
+    } else if (b.type === 'features') {
+      section.appendChild(featureFields(i, b));
+    } else if (b.type === 'cta') {
+      section.appendChild(lineField(i, 'text', 'Heading (a few words)', function () { return b.heading; }, function (v) { b.heading = v; }));
+      section.appendChild(areaField(i, 'cta-text', 'One sentence', 2, function () { return b.text; }, function (v) { b.text = v; }));
+      section.appendChild(buttonFields(i, b.button, 'btn'));
+    } else if (b.type === 'contact') {
+      section.appendChild(contactFields(i, b));
+    } else if (b.type === 'columns') {
+      var colHint = 'A blank line starts a new paragraph. Start lines with "- " for a bulleted list or "1. " for a numbered list.';
+      section.appendChild(areaField(i, 'text', 'Column 1', 6, function () { return b.left; }, function (v) { b.left = v; }, { hint: colHint }));
+      section.appendChild(areaField(i, 'col2', 'Column 2', 6, function () { return b.right; }, function (v) { b.right = v; }, { hint: colHint }));
     } else {
       var hid = fieldId(i, 'html');
       var hta = el('textarea', { id: hid, rows: 8, spellcheck: 'false', class: 'code' });
@@ -321,12 +573,74 @@
     return section;
   }
 
+  function heroFields(i, b) {
+    var box = document.createDocumentFragment();
+    var lvlId = fieldId(i, 'level');
+    var lvl = el('select', { id: lvlId, 'aria-describedby': lvlId + '-hint' });
+    [['h2', 'Heading 2 (the page title is the main heading)'], ['h1', 'Heading 1 (only when “Don’t show the page title as a heading” is ticked)']].forEach(function (o) {
+      var opt = el('option', { value: o[0], text: o[1] });
+      if (o[0] === b.level) opt.selected = true;
+      lvl.appendChild(opt);
+    });
+    lvl.addEventListener('change', function () { b.level = lvl.value; sync(); });
+    box.appendChild(el('div', { class: 'field' }, [el('label', { for: lvlId, text: 'Heading level' }),
+      el('p', { class: 'hint', id: lvlId + '-hint', text: 'Every page needs exactly one heading level 1. On the home page that is usually this hero heading.' }), lvl]));
+    box.appendChild(lineField(i, 'text', 'Heading', function () { return b.heading; }, function (v) { b.heading = v; }));
+    box.appendChild(areaField(i, 'lede', 'Opening paragraph (shown larger)', 3, function () { return b.lede; }, function (v) { b.lede = v; }));
+    box.appendChild(buttonFields(i, b.buttons[0], 'btn0', 1));
+    box.appendChild(buttonFields(i, b.buttons[1], 'btn1', 2));
+    return box;
+  }
+
+  function featureFields(i, b) {
+    var box = document.createDocumentFragment();
+    box.appendChild(lineField(i, 'text', 'Heading (optional)', function () { return b.heading; }, function (v) { b.heading = v; }));
+    var list = el('fieldset', { class: 'block-items' }, [el('legend', { text: b.items.length === 1 ? 'Items (1)' : 'Items (' + b.items.length + ')' })]);
+    b.items.forEach(function (it, k) {
+      var item = el('fieldset', { class: 'block-item' }, [el('legend', { text: 'Item ' + (k + 1) + ' of ' + b.items.length })]);
+      item.appendChild(lineField(i, 'item' + k + '-title', 'Title', function () { return it.title; }, function (v) { it.title = v; }));
+      item.appendChild(areaField(i, 'item' + k + '-text', 'Description', 3, function () { return it.text; }, function (v) { it.text = v; }));
+      var remove = el('button', { type: 'button', class: 'button button-small button-outline', text: 'Remove item ' + (k + 1) });
+      remove.addEventListener('click', function () {
+        if ((it.title + it.text).trim() !== '' && !window.confirm('Remove item ' + (k + 1) + ' (' + (it.title.trim() || 'no title') + ')?')) return;
+        b.items.splice(k, 1);
+        var next = b.items.length ? 'item' + Math.min(k, b.items.length - 1) + '-title' : 'add-item';
+        render(i, next);
+        announce('Item ' + (k + 1) + ' removed. ' + (b.items.length === 1 ? '1 item left.' : b.items.length + ' items left.'));
+      });
+      item.appendChild(remove);
+      list.appendChild(item);
+    });
+    box.appendChild(list);
+    var add = el('button', { type: 'button', class: 'button button-small button-outline', id: fieldId(i, 'add-item'), text: 'Add item' });
+    add.addEventListener('click', function () {
+      b.items.push({ title: '', text: '' });
+      render(i, 'item' + (b.items.length - 1) + '-title');
+      announce('Item ' + b.items.length + ' added. Type its title.');
+    });
+    box.appendChild(el('div', { class: 'block-actions' }, [add]));
+    return box;
+  }
+
+  function contactFields(i, b) {
+    var box = document.createDocumentFragment();
+    box.appendChild(lineField(i, 'text', 'Heading (optional)', function () { return b.heading; }, function (v) { b.heading = v; }));
+    box.appendChild(el('p', { class: 'hint', text: 'Fill in the details you want to show. Empty ones are left out.' }));
+    box.appendChild(lineField(i, 'phone', 'Phone number', function () { return b.phone; }, function (v) { b.phone = v; }, { spellcheck: false, hint: 'Shown as a link that phones can dial.' }));
+    box.appendChild(lineField(i, 'email', 'Email address', function () { return b.email; }, function (v) { b.email = v; }, { spellcheck: false }));
+    box.appendChild(areaField(i, 'address', 'Address (one line per line)', 3, function () { return b.address; }, function (v) { b.address = v; }, { marks: false }));
+    box.appendChild(areaField(i, 'hours', 'Hours', 2, function () { return b.hours; }, function (v) { b.hours = v; }, { marks: false, hint: 'For example: Monday to Friday, 9 am to 5 pm' }));
+    return box;
+  }
+
   function imageFields(i, b) {
     var box = document.createDocumentFragment();
     var srcId = fieldId(i, 'src'), altId = fieldId(i, 'alt'), decId = fieldId(i, 'dec'), capId = fieldId(i, 'cap'), fileId = fieldId(i, 'file');
+    var alt = el('input', { type: 'text', id: altId });
     var src = el('input', { type: 'text', id: srcId, spellcheck: 'false' });
     src.value = b.src;
     src.addEventListener('input', function () { b.src = src.value; sync(); });
+    src.addEventListener('change', function () { prefillAlt(b, alt); });
     box.appendChild(el('div', { class: 'field' }, [el('label', { for: srcId, text: 'Image address' }),
       el('p', { class: 'hint', id: srcId + '-hint', text: 'Upload a picture below, or paste the address of one from Images and files.' }), src]));
     var file = el('input', { type: 'file', id: fileId, accept: 'image/jpeg,image/png,image/gif,image/webp' });
@@ -341,11 +655,10 @@
         .catch(function (e) { announce(e.message); window.alert(e.message); });
     });
     box.appendChild(el('div', { class: 'field' }, [el('label', { for: fileId, text: 'Upload an image' }), file]));
-    var alt = el('input', { type: 'text', id: altId });
     alt.value = b.alt;
     alt.disabled = !!b.decorative;
     alt.addEventListener('input', function () { b.alt = alt.value; sync(); });
-    box.appendChild(el('div', { class: 'field' }, [el('label', { for: altId, text: 'Alt text: what the picture shows, in a sentence' }), alt]));
+    box.appendChild(el('div', { class: 'field' }, [el('label', { for: altId, text: 'Alt text: what the picture shows, in a sentence' }), alt, suggestButton(i, b, alt)]));
     var dec = el('input', { type: 'checkbox', id: decId });
     dec.checked = !!b.decorative;
     dec.addEventListener('change', function () { b.decorative = dec.checked; alt.disabled = dec.checked; sync(); });
@@ -354,12 +667,78 @@
     cap.value = b.caption;
     cap.addEventListener('input', function () { b.caption = cap.value; sync(); });
     box.appendChild(el('div', { class: 'field' }, [el('label', { for: capId, text: 'Caption (optional, shown under the picture)' }), cap]));
+    prefillAlt(b, alt);
     return box;
   }
+
+  /* ---------- Alt text help from Claude ---------- */
+
+  // A description saved on the Images and files screen fills an empty Alt text field.
+  function prefillAlt(b, altInput) {
+    var known = state.altText.known[(b.src || '').trim()];
+    if (!known || b.decorative || b.alt.trim() !== '') return;
+    b.alt = known;
+    altInput.value = known;
+    sync();
+    announce('Alt text filled in from Images and files: ' + known + ' You can change it.');
+  }
+
+  // "Suggest a description": hidden until the alt text feature says it is available.
+  function suggestButton(i, b, altInput) {
+    var wrapper = el('div', { class: 'block-actions alt-suggest' });
+    var btn = el('button', { type: 'button', class: 'button button-small button-outline', id: fieldId(i, 'suggest'), text: 'Suggest a description' });
+    var out = el('p', { class: 'hint', id: fieldId(i, 'suggest-out') });
+    if (!state.altText.available) wrapper.hidden = true;
+    state.altButtons.push(wrapper);
+    btn.addEventListener('click', function () {
+      if (!b.src.trim()) { announce('Add an image address first.'); document.getElementById(fieldId(i, 'src')).focus(); return; }
+      if (b.decorative) { announce('This image is marked decorative, so it has no alt text. Untick Decorative image first.'); return; }
+      btn.disabled = true;
+      out.textContent = '';
+      announce('Asking Claude to describe the image. This takes a few seconds.');
+      fetch('/admin/?a=alt_text', { method: 'POST', credentials: 'same-origin',
+        headers: { 'X-CSRF-Token': state.csrf, 'Content-Type': 'application/json', Accept: 'application/json' },
+        body: JSON.stringify({ url: b.src.trim(), lang: pageLang() }) })
+        .then(function (r) { return r.json().then(function (j) { if (!r.ok || !j.alt) throw new Error(j.error || 'No description came back. Try again in a moment.'); return j; }); })
+        .then(function (j) {
+          b.alt = j.alt;
+          altInput.value = j.alt;
+          sync();
+          out.textContent = j.description ? 'Longer description, if you want more detail: ' + j.description : '';
+          announce('Suggested alt text: ' + j.alt + ' It is in the Alt text field; change it if it is not right.');
+          altInput.focus();
+        })
+        .catch(function (e) { out.textContent = e.message; announce(e.message); })
+        .then(function () { btn.disabled = false; });
+    });
+    wrapper.appendChild(btn);
+    wrapper.appendChild(out);
+    return wrapper;
+  }
+
+  // Ask the alt text feature whether it can help (it answers 404 or available: false when it can't).
+  function loadAltText() {
+    if (!window.fetch) return;
+    fetch('/admin/?a=alt_text', { credentials: 'same-origin', headers: { Accept: 'application/json' } })
+      .then(function (r) { return r.ok ? r.json() : { available: false }; })
+      .then(function (j) {
+        state.altText = { loaded: true, available: !!j.available, known: j.known || {} };
+        if (!state.root) return;
+        if (state.altText.available) state.altButtons.forEach(function (w) { w.hidden = false; });
+        state.blocks.forEach(function (b, i) {
+          var input = b.type === 'image' ? document.getElementById(fieldId(i, 'alt')) : null;
+          if (input) prefillAlt(b, input);
+        });
+      })
+      .catch(function () { state.altText.loaded = true; });
+  }
+
+  /* ---------- Changing, adding, moving and deleting blocks ---------- */
 
   function render(focusIndex, focusWhat) {
     var list = state.root.querySelector('.block-list');
     list.innerHTML = '';
+    state.altButtons = [];
     state.blocks.forEach(function (b, i) { list.appendChild(renderBlock(b, i)); });
     sync();
     if (focusIndex !== undefined) {
@@ -368,17 +747,39 @@
     }
   }
 
+  // All the words in a block, for converting it to another type and for the delete confirmation.
+  function blockText(b) {
+    var keep = function (s) { return s && s.trim(); };
+    switch (b.type) {
+      case 'faq': return (b.question + '\n\n' + b.answer).trim();
+      case 'ul': case 'ol': return b.items.join('\n');
+      case 'image': return b.caption || '';
+      case 'html': return b.html.replace(/<[^>]+>/g, '').trim();
+      case 'hero': return [b.heading, b.lede].concat(b.buttons.map(function (x) { return x.label; })).filter(keep).join('\n\n');
+      case 'features': return [b.heading].concat(b.items.map(function (it) { return (it.title + '\n' + it.text).trim(); })).filter(keep).join('\n\n');
+      case 'cta': return [b.heading, b.text, b.button.label].filter(keep).join('\n\n');
+      case 'contact': return [b.heading, b.phone, b.email, b.address, b.hours].filter(keep).join('\n');
+      case 'columns': return (b.left + '\n\n' + b.right).trim();
+      default: return b.text || '';
+    }
+  }
+
+  function hasContent(b) {
+    return blockText(b).trim() !== '' || !!(b.src && b.src.trim());
+  }
+
   function changeType(i, type) {
-    var b = state.blocks[i], text = '';
-    if (b.type === 'faq') text = (b.question + '\n\n' + b.answer).trim();
-    else if (b.text !== undefined) text = b.text;
-    else if (b.items) text = b.items.join('\n');
-    else if (b.type === 'image') text = b.caption || '';
-    else if (b.type === 'html') text = b.html.replace(/<[^>]+>/g, '').trim();
+    var b = state.blocks[i], text = blockText(b);
+    var isHeading = b.type === 'h2' || b.type === 'h3' || b.type === 'h4';
     var nb;
     if (type === 'ul' || type === 'ol') nb = { type: type, items: text.split('\n') };
     else if (type === 'image') nb = { type: 'image', src: '', alt: '', decorative: false, caption: '' };
-    else if (type === 'faq') nb = { type: 'faq', question: b.type === 'h2' || b.type === 'h3' || b.type === 'h4' ? text : '', answer: b.type === 'h2' || b.type === 'h3' || b.type === 'h4' ? '' : text };
+    else if (type === 'faq') nb = { type: 'faq', question: isHeading ? text : '', answer: isHeading ? '' : text };
+    else if (type === 'hero') nb = { type: 'hero', level: 'h2', heading: isHeading ? text : '', lede: isHeading ? '' : text, buttons: [{ label: '', url: '' }, { label: '', url: '' }] };
+    else if (type === 'features') nb = { type: 'features', heading: isHeading ? text : '', items: [{ title: '', text: isHeading ? '' : text }] };
+    else if (type === 'cta') nb = { type: 'cta', heading: isHeading ? text : '', text: isHeading ? '' : text, button: { label: '', url: '' } };
+    else if (type === 'contact') nb = { type: 'contact', heading: isHeading ? text : '', phone: '', email: '', address: '', hours: '', labels: {} };
+    else if (type === 'columns') nb = { type: 'columns', left: text, right: '' };
     else if (type === 'html') nb = { type: 'html', html: b.type === 'html' ? b.html : serializeOne(b) };
     else nb = { type: type, text: text, lede: b.lede };
     state.blocks[i] = nb;
@@ -413,8 +814,7 @@
 
   function deleteBlock(i) {
     var b = state.blocks[i];
-    var hasContent = (b.text && b.text.trim()) || (b.items && b.items.join('').trim()) || (b.src && b.src.trim()) || (b.html && b.html.trim()) || (b.question && (b.question + b.answer).trim());
-    if (hasContent && !window.confirm('Delete block ' + (i + 1) + ' (' + TYPES[b.type].toLowerCase() + ')? This can’t be undone.')) return;
+    if (hasContent(b) && !window.confirm('Delete block ' + (i + 1) + ' (' + TYPES[b.type].toLowerCase() + ')? This can’t be undone.')) return;
     state.blocks.splice(i, 1);
     if (!state.blocks.length) state.blocks.push({ type: 'p', text: '' });
     render(Math.min(i, state.blocks.length - 1), 'type');
@@ -433,7 +833,9 @@
 
     var root = el('div', { class: 'blocks-editor', role: 'region', 'aria-label': 'Content blocks' });
     root.appendChild(el('p', { id: 'blocks-help', class: 'hint', html:
-      'Each block is a form field. Use the Block type list to make it a heading, list, quote, question and answer, or image, and the buttons under each block to add, move or delete it. ' +
+      'Each block is a form field. Use the Block type list to make it a heading, list, quote, question and answer or image, ' +
+      'or a whole section: a hero (the opening of a page: heading, opening paragraph and up to two buttons), a features or services list, ' +
+      'a call to action, contact details or two columns. The buttons under each block add, move or delete it. ' +
       'For emphasis, select words and press Bold, Italic or Link, or type the marks yourself: <code>**bold**</code>, <code>*italic*</code>, <code>[link text](https://example.com)</code>.' }));
     var top = el('button', { type: 'button', class: 'button button-small button-outline', text: 'Add a block at the top' });
     top.addEventListener('click', function () { insertBlock(0); });
@@ -446,6 +848,7 @@
     textarea.hidden = true;
     textarea.insertAdjacentElement('afterend', root);
     render();
+    if (!state.altText.loaded) loadAltText();
 
     // The error summary links to the hidden field; send that focus to the first block instead.
     document.querySelectorAll('a[href="#' + textarea.id + '"]').forEach(function (a) {

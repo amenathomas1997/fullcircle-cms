@@ -163,3 +163,18 @@ table.stats td:last-child { width: 40%; }
 .button-small { padding: .35rem .8rem; font-size: .95rem; }
 .block .checkbox { display: flex; align-items: center; gap: .6rem; }
 .block .checkbox input { width: 1.4rem; height: 1.4rem; margin: 0; }
+
+/* Section blocks and alt text help in the Blocks editor; the accessibility check */
+.block-items { border: 2px solid var(--border); border-radius: 10px; padding: .5rem 1rem .25rem; margin: 0 0 1rem; }
+.block-items > legend { font-weight: 700; padding: 0 .4rem; }
+.block-item { padding: .5rem 0 .25rem; margin: 0; }
+.block-item + .block-item { border-top: 1px solid var(--border); }
+.block-item legend { font-weight: 600; font-size: 1rem; margin-bottom: .25rem; }
+.alt-suggest { margin: .5rem 0 0; align-items: center; }
+.alt-suggest .hint { margin: 0; flex-basis: 100%; }
+.a11y-warnings { border: 4px solid var(--purple); border-radius: 8px; padding: 1rem 1.25rem; margin: 0 0 2rem; }
+.a11y-warnings h2 { margin: 0 0 .5rem; font-size: 1.3rem; border: 0; padding: 0; }
+.a11y-warnings ul { margin: 0; }
+.a11y-warnings li + li { margin-top: .35rem; }
+.alt-describe textarea { min-width: 16rem; font-size: 1rem; margin-bottom: .5rem; }
+.alt-describe .hint { margin: .25rem 0 0; }
