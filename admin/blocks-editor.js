@@ -316,15 +316,17 @@
     return links.length ? '<p class="buttons">' + links.join(' ') + '</p>' : '';
   }
 
-  // The language of the page being edited, from its address: "es-" pages are Spanish.
+  // The language of the page being edited, from its address: pages named after the site's second
+  // language ("es" or "es-...") are in that language. window.fcLanguages comes from editor_scripts().
   function pageLang() {
     var slug = document.getElementById('slug');
     var v = slug ? slug.value.trim() : '';
-    return v === 'es' || v.indexOf('es-') === 0 ? 'es' : 'en';
+    var langs = window.fcLanguages || { primary: 'en', second: 'es' };
+    return langs.second && (v === langs.second || v.indexOf(langs.second + '-') === 0) ? langs.second : langs.primary;
   }
 
   function contactLabel(b, key) {
-    return b.labels && b.labels[key] !== undefined ? b.labels[key] : CONTACT_LABELS[pageLang()][key];
+    return b.labels && b.labels[key] !== undefined ? b.labels[key] : (CONTACT_LABELS[pageLang()] || CONTACT_LABELS.en)[key];
   }
 
   function sectionHtml(className, parts, tag) {

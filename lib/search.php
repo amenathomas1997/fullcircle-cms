@@ -1,6 +1,6 @@
 <?php
 /**
- * Whole-site search (/search/ in English, /es/buscar/ in Spanish) over
+ * Whole-site search (/search/, and /es/buscar/ on the second-language side) over
  * published pages, blog posts and cheat sheets in the visitor's language,
  * plus the structured data that helps Google show the business, FAQs and posts.
  */
@@ -9,7 +9,7 @@ declare(strict_types=1);
 
 function search_url(): string
 {
-    return current_lang() === 'es' ? '/es/buscar/' : '/search/';
+    return lang_route_path('search');
 }
 
 function plain_text(string $html): string
@@ -43,19 +43,19 @@ function site_search(string $query): array
     $candidates = [];
     foreach (all_items('pages') as $p) {
         if (($p['status'] ?? '') === 'published' && slug_lang($p['slug']) === $lang) {
-            $candidates[] = ['type' => $lang === 'es' ? 'Página' : 'Page', 'title' => $p['title'], 'url' => page_path($p['slug']),
+            $candidates[] = ['type' => t('type_page'), 'title' => $p['title'], 'url' => page_path($p['slug']),
                 'text' => plain_text(preg_replace('/\[[a-z-]+\]/', '', (string) $p['body'])) . ' ' . ($p['description'] ?? '')];
         }
     }
     foreach (published_posts() as $p) {
         if (slug_lang($p['slug']) === $lang) {
-            $candidates[] = ['type' => $lang === 'es' ? 'Blog' : 'Blog post', 'title' => $p['title'], 'url' => post_url($p),
+            $candidates[] = ['type' => t('type_post'), 'title' => $p['title'], 'url' => post_url($p),
                 'text' => post_text($p) . ' ' . implode(' ', post_categories($p))];
         }
     }
     foreach (published_resources() as $r) {
         if (slug_lang($r['slug']) === $lang) {
-            $candidates[] = ['type' => $lang === 'es' ? 'Guía rápida' : 'Cheat sheet', 'title' => $r['title'], 'url' => '/resources/' . $r['slug'] . '/',
+            $candidates[] = ['type' => t('type_resource'), 'title' => $r['title'], 'url' => '/resources/' . $r['slug'] . '/',
                 'text' => ($r['summary'] ?? '') . ' ' . plain_text((string) $r['body'])];
         }
     }
@@ -82,22 +82,19 @@ function site_search(string $query): array
 
 function search_page(): never
 {
-    $es = current_lang() === 'es';
     $q = trim(mb_substr((string) ($_GET['q'] ?? ''), 0, 200));
     $results = $q !== '' ? site_search($q) : [];
-    $out = '<h1>' . ($es ? 'Buscar en el sitio' : 'Search this website') . '</h1>'
+    $out = '<h1>' . h(t('search_title')) . '</h1>'
         . '<form class="search-form" role="search" method="get" action="' . h(search_url()) . '">'
-        . '<div class="field"><label for="site-search">' . ($es ? 'Buscar' : 'Search for') . '</label>'
+        . '<div class="field"><label for="site-search">' . h(t('search_for')) . '</label>'
         . '<input type="search" id="site-search" name="q" value="' . h($q) . '"></div>'
-        . '<button type="submit" class="button">' . ($es ? 'Buscar' : 'Search') . '</button></form>';
+        . '<button type="submit" class="button">' . h(t('search')) . '</button></form>';
     if ($q !== '') {
         $n = count($results);
         $out .= '<h2 id="results-heading" tabindex="-1" data-focus-on-load>'
-            . ($es ? ($n === 1 ? '1 resultado' : "$n resultados") . ' para “' . h($q) . '”'
-                : ($n === 1 ? '1 result' : "$n results") . ' for “' . h($q) . '”') . '</h2>';
+            . ($n === 1 ? sprintf(t('search_result_one'), h($q)) : sprintf(t('search_result_many'), $n, h($q))) . '</h2>';
         if (!$results) {
-            $out .= '<p>' . ($es ? 'Pruebe con otras palabras, o <a href="/es/contacto/">contáctenos</a> y le ayudaremos.'
-                : 'Try different words, or <a href="/contact-us/">contact us</a> and we’ll help.') . '</p>';
+            $out .= '<p>' . sprintf(t('search_none'), '<a href="' . h(contact_path(current_lang())) . '">' . h(t('search_contact_link')) . '</a>') . '</p>';
         } else {
             $out .= '<ol class="search-results">';
             foreach ($results as $r) {
@@ -107,8 +104,7 @@ function search_page(): never
             $out .= '</ol>';
         }
     }
-    send_html(render_layout($q !== '' ? ($es ? "Resultados para $q" : "Search results for $q") : ($es ? 'Buscar' : 'Search'), $out,
-        $es ? 'Busque en las páginas, el blog y las guías rápidas de ' . site_name() . '.' : 'Search ' . site_name() . '’s pages, blog posts and cheat sheets.'));
+    send_html(render_layout($q !== '' ? t('search_results_for') . " $q" : t('search'), $out, t('search_description')));
 }
 
 /* ---------- Structured data for search engines (schema.org JSON-LD) ---------- */
@@ -175,7 +171,7 @@ function post_structured_data(array $post): void
         'datePublished' => date('c', post_time($post)),
         'dateModified' => date('c', strtotime((string) ($post['updated'] ?? '')) ?: post_time($post)),
         'url' => site_url(post_url($post)),
-        'inLanguage' => slug_lang($post['slug']) === 'es' ? 'es' : 'en',
+        'inLanguage' => slug_lang($post['slug']),
         'description' => post_excerpt($post, 30),
         'author' => ['@id' => site_url('/') . '#business'],
         'publisher' => ['@id' => site_url('/') . '#business'],

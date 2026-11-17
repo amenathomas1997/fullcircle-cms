@@ -14,7 +14,7 @@ if (!is_array($post) || empty($post['title'])) {
 $dom = new DOMDocument();
 libxml_use_internal_errors(true);
 $dom->loadHTML('<?xml encoding="utf-8"?><div id="root">' . ($post['body'] ?? '') . '</div>');
-$es = str_starts_with((string) ($argv[1] ?? ''), 'es-') || ($post['lang'] ?? '') === 'es';
+$es = slug_lang((string) ($argv[1] ?? '')) === 'es' || ($post['lang'] ?? '') === 'es';
 $name = site_name();
 $lines = [$post['title'] . '.', $es ? "Del blog de $name." : "From the $name blog.", ''];
 $walk = function (DOMNode $parent) use (&$walk, &$lines) {

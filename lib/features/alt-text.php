@@ -114,7 +114,7 @@ function alt_text_image_path(string $url): ?string
 
 /**
  * Describe one image file. Returns ['alt' => …, 'description' => …] or ['error' => plain words].
- * $lang is 'en' or 'es': the language the words come back in.
+ * $lang is a language code such as 'en' or 'es': the language the words come back in.
  */
 function describe_image(string $path, string $lang = 'en'): array
 {
@@ -128,7 +128,7 @@ function describe_image(string $path, string $lang = 'en'): array
     if (!alt_text_count_call()) {
         return ['error' => 'Today’s limit of ' . ALT_TEXT_DAILY_LIMIT . ' descriptions has been reached. Try again tomorrow.'];
     }
-    $language = $lang === 'es' ? 'Spanish' : 'English';
+    $language = language_english_name(isset(SUPPORTED_LANGUAGES[$lang]) ? $lang : 'en');
     $about = trim((string) settings()['description']);
     $prompt = "This image will appear on the website of " . legal_name() . ($about !== '' ? ", described as: $about" : '') . ". Many visitors use screen readers.\n\n"
         . "Write, in $language:\n"
@@ -204,7 +204,8 @@ function alt_text_endpoint(bool $post): never
     // admin/index.php has already checked the CSRF token (from the X-CSRF-Token header for JSON requests).
     $input = json_decode((string) file_get_contents('php://input'), true);
     $url = trim((string) (is_array($input) ? ($input['url'] ?? '') : ($_POST['url'] ?? '')));
-    $lang = (is_array($input) ? ($input['lang'] ?? '') : ($_POST['lang'] ?? '')) === 'es' ? 'es' : 'en';
+    $lang = (string) (is_array($input) ? ($input['lang'] ?? '') : ($_POST['lang'] ?? ''));
+    $lang = isset(SUPPORTED_LANGUAGES[$lang]) ? $lang : 'en';
     $fail = function (string $message, int $code = 400): never {
         http_response_code($code);
         echo json_encode(['error' => $message], JSON_UNESCAPED_UNICODE);

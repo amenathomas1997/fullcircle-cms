@@ -156,7 +156,7 @@ function review_expired_page(?array $link): never
     $content = '<h1 tabindex="-1" data-focus-on-load>' . h(t('review_expired_title')) . '</h1>'
         . '<p>' . h(t('review_expired_body')) . '</p>'
         . '<p>' . h(t('review_expired_contact')) . ' <a href="' . h(contact_path(current_lang())) . '">' . h(t('review_contact_link')) . '</a>.</p>'
-        . '<p><a href="' . (current_lang() === 'es' ? '/es/' : '/') . '">' . h(t('review_home_link')) . '</a></p>';
+        . '<p><a href="' . h(home_path()) . '">' . h(t('review_home_link')) . '</a></p>';
     send_html(render_layout(t('review_expired_title'), $content), 410);
 }
 

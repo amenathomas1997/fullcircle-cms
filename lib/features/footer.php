@@ -4,7 +4,7 @@
  * bottom of the site.
  *
  * Settings hold the footer as "footer_groups" (and "footer_groups_es" for
- * Spanish pages):
+ * pages in the site's second language, whatever it is):
  *   ['contact' => true,                      show a Contact column from the site's contact details
  *    'groups' => [['heading' => 'More', 'links' => [['label' => 'About', 'url' => '/about/'], …]], …],
  *    'small_print' => 'Registered charity 123456']   one plain-text line under the columns
@@ -24,9 +24,9 @@ register_admin_screen('footer', fn (bool $post) => $post ? footer_save() : foote
 /* ---------- Reading the settings ---------- */
 
 /** The footer groups for a language, in a clean shape, or null when that language has none saved. */
-function footer_groups(string $lang = 'en'): ?array
+function footer_groups(?string $lang = null): ?array
 {
-    $raw = settings()[$lang === 'es' ? 'footer_groups_es' : 'footer_groups'] ?? null;
+    $raw = settings()[is_second_lang($lang ?? primary_lang()) ? 'footer_groups_es' : 'footer_groups'] ?? null;
     if (!is_array($raw)) {
         return null;
     }
@@ -42,7 +42,7 @@ function footer_groups(string $lang = 'en'): ?array
 }
 
 /** True when the Footer screen has something to show for this language: a contact column or at least one group. */
-function footer_groups_active(string $lang = 'en'): bool
+function footer_groups_active(?string $lang = null): bool
 {
     $fg = footer_groups($lang);
     return $fg !== null && ($fg['contact'] || $fg['groups']);
@@ -52,20 +52,20 @@ function footer_groups_active(string $lang = 'en'): bool
 
 /**
  * The HTML for {{footer}}. Groups from the Footer screen come first; a site without them keeps the
- * raw footer HTML from Site template. Spanish pages use the Spanish footer when there is one.
+ * raw footer HTML from Site template. Second-language pages use their own footer when there is one.
  */
 function render_footer(string $lang): string
 {
     $s = settings();
-    if ($lang === 'es') {
-        if (footer_groups_active('es')) {
-            return footer_groups_html('es');
+    if (is_second_lang($lang)) {
+        if (footer_groups_active($lang)) {
+            return footer_groups_html($lang);
         }
         if (($s['footer_html_es'] ?? '') !== '') {
             return (string) $s['footer_html_es'];
         }
     }
-    return footer_groups_active('en') ? footer_groups_html('en') : (string) ($s['footer_html'] ?? '');
+    return footer_groups_active(primary_lang()) ? footer_groups_html(primary_lang()) : (string) ($s['footer_html'] ?? '');
 }
 
 function footer_groups_html(string $lang): string
@@ -119,7 +119,8 @@ function footer_link_lang(string $url, string $lang): string
     if (!str_starts_with($url, '/')) {
         return '';
     }
-    $target = $url === '/es/' || str_starts_with($url, '/es/') ? 'es' : 'en';
+    $second = second_lang();
+    $target = $second !== '' && ($url === "/$second/" || str_starts_with($url, "/$second/")) ? $second : primary_lang();
     return $target !== $lang ? ' lang="' . $target . '" hreflang="' . $target . '"' : '';
 }
 
@@ -127,7 +128,7 @@ function footer_link_lang(string $url, string $lang): string
 
 function footer_lang(): string
 {
-    return ($_GET['lang'] ?? '') === 'es' && feature_on('spanish') ? 'es' : 'en';
+    return second_lang_on() && ($_GET['lang'] ?? '') === second_lang() ? second_lang() : primary_lang();
 }
 
 function footer_form(array $errors = [], ?array $fg = null): never
@@ -141,7 +142,7 @@ function footer_form(array $errors = [], ?array $fg = null): never
         : 'No phone number or email address is set in Settings yet, so it shows a link to the contact page.';
     $body = '<p>The footer is the bottom of every page: an optional Contact column, then your own groups of links, then a line of small print and the copyright line. '
         . 'Moving, adding or removing anything saves the footer straight away.</p>'
-        . '<form method="post" action="' . h(admin_url('footer', $lang === 'es' ? ['lang' => 'es'] : [])) . '">' . csrf_field()
+        . '<form method="post" action="' . h(admin_url('footer', is_second_lang($lang) ? ['lang' => $lang] : [])) . '">' . csrf_field()
         . '<h2>Contact column</h2>'
         . checkbox_field('contact', 'Show a Contact column with the site’s contact details', $fg['contact'], ['hint' => $contactNote]);
 
@@ -185,22 +186,24 @@ function footer_form(array $errors = [], ?array $fg = null): never
         . text_field('small_print', 'Small print (optional)', $fg['small_print'], ['maxlength' => 300, 'error' => $errors['small_print'] ?? null,
             'hint' => 'One line of plain text under the columns, for example a registration number. The copyright line with the year and your name is added on its own.'])
         . '<div class="form-actions"><button type="submit" class="button" name="move" value="save">Save footer</button>'
-        . '<a href="/' . ($lang === 'es' ? 'es/' : '') . '#footer">See the footer on the website</a></div></form>';
+        . '<a href="' . h(home_path($lang)) . '#footer">See the footer on the website</a></div></form>';
 
     $switch = '';
-    if (feature_on('spanish')) {
+    if (second_lang_on()) {
+        $primaryName = language_english_name(primary_lang());
+        $secondName = second_lang_name();
         $switch = '<nav aria-label="Which footer"><ul class="period-list">'
-            . '<li><a href="' . h(admin_url('footer')) . '"' . ($lang === 'en' ? ' aria-current="page"' : '') . '>English footer</a></li>'
-            . '<li><a href="' . h(admin_url('footer', ['lang' => 'es'])) . '"' . ($lang === 'es' ? ' aria-current="page"' : '') . '>Spanish footer</a></li></ul></nav>'
-            . ($lang === 'es' ? '<p>This footer is shown on Spanish pages (addresses starting with /es/). When it is empty, Spanish pages use the English footer.</p>' : '');
+            . '<li><a href="' . h(admin_url('footer')) . '"' . (!is_second_lang($lang) ? ' aria-current="page"' : '') . '>' . h($primaryName) . ' footer</a></li>'
+            . '<li><a href="' . h(admin_url('footer', ['lang' => second_lang()])) . '"' . (is_second_lang($lang) ? ' aria-current="page"' : '') . '>' . h($secondName) . ' footer</a></li></ul></nav>'
+            . (is_second_lang($lang) ? '<p>This footer is shown on ' . h($secondName) . ' pages (addresses starting with ' . h(home_path($lang)) . '). When it is empty, ' . h($secondName) . ' pages use the ' . h($primaryName) . ' footer.</p>' : '');
     }
-    $raw = $lang === 'es' ? settings()['footer_html_es'] : settings()['footer_html'];
+    $raw = is_second_lang($lang) ? settings()['footer_html_es'] : settings()['footer_html'];
     $note = '';
     if (!footer_groups_active($lang) && $raw !== '') {
         $note = '<p class="notice" role="note">The website is still using the raw footer HTML from Site template. '
             . 'As soon as you turn on the Contact column or add a group here, this screen takes over.</p>';
     }
-    admin_screen($lang === 'es' ? 'Spanish footer' : 'Footer', $switch . $note . $body, 'footer', ['errors' => $errors]);
+    admin_screen(is_second_lang($lang) ? second_lang_name() . ' footer' : 'Footer', $switch . $note . $body, 'footer', ['errors' => $errors]);
 }
 
 function footer_save(): never
@@ -274,8 +277,8 @@ function footer_save(): never
         footer_form($errors, $fg);
     }
     $s = settings();
-    $s[$lang === 'es' ? 'footer_groups_es' : 'footer_groups'] = $fg;
+    $s[is_second_lang($lang) ? 'footer_groups_es' : 'footer_groups'] = $fg;
     save_settings($s);
     flash($message);
-    go(admin_url('footer', $lang === 'es' ? ['lang' => 'es'] : []));
+    go(admin_url('footer', is_second_lang($lang) ? ['lang' => $lang] : []));
 }

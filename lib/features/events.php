@@ -6,7 +6,7 @@
  *   /events/<slug>/          one event, with an "Add to my calendar" link
  *   /events/<slug>.ics       that event as an iCalendar file
  *   /events/feed.ics         every published event, for calendar subscriptions
- *   /es/eventos/ ...         the same in Spanish (when the Spanish feature is on)
+ *   /es/eventos/ ...         the same in the second language (its route_events word; when that feature is on)
  *   [upcoming-events]        the next five, with a link to all; [events-list] the whole list
  * Occurrences of repeating events are worked out on the fly (at most 52 per event).
  */
@@ -23,8 +23,8 @@ register_route(function (string $path, array $parts): bool {
         return false;
     }
     $first = $parts[0] ?? '';
-    if ($first === 'es' && ($parts[1] ?? '') === 'eventos' && feature_on('spanish')) {
-        current_lang('es');
+    if (is_second_lang($first) && ($parts[1] ?? '') === lang_route('events', $first) && feature_on('spanish')) {
+        current_lang($first);
         $rest = array_slice($parts, 2);
     } elseif ($first === 'events') {
         $rest = array_slice($parts, 1);
@@ -58,7 +58,8 @@ register_dashboard_card(fn() => feature_on('events') ? events_dashboard_card() :
 /** The web address of the events list in a language. */
 function events_base(?string $lang = null): string
 {
-    return ($lang ?? current_lang()) === 'es' && feature_on('spanish') ? '/es/eventos/' : '/events/';
+    $lang ??= current_lang();
+    return is_second_lang($lang) && feature_on('spanish') ? lang_route_path('events', $lang) : '/events/';
 }
 
 function event_url(array $event, ?string $lang = null): string
@@ -255,7 +256,7 @@ function events_list_html(): string
 
 function events_index(): never
 {
-    $other = feature_on('spanish') ? (current_lang() === 'es' ? '/events/' : '/es/eventos/') : null;
+    $other = second_lang_on() ? events_base(other_lang()) : null;
     send_html(render_layout(t('events'), '<h1>' . h(t('events')) . '</h1>' . events_list_html(), '', events_base(), $other));
 }
 
@@ -291,7 +292,7 @@ function event_page(string $slug): never
         . '<p><a class="button button-outline" href="' . h('/events/' . $slug . '.ics') . '">' . h(t('add_to_calendar')) . '</a></p>'
         . (string) ($e['body'] ?? '')
         . '<p><a href="' . h(events_base()) . '">' . h(t('back_to_events')) . '</a></p>';
-    $other = feature_on('spanish') ? event_url($e, current_lang() === 'es' ? 'en' : 'es') : null;
+    $other = second_lang_on() ? event_url($e, other_lang()) : null;
     send_html(render_layout((string) $e['title'], $content, mb_substr(trim(plain_text((string) ($e['body'] ?? ''))), 0, 160), event_url($e), $other));
 }
 

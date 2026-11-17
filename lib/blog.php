@@ -3,9 +3,9 @@
  * The blog: post lists, search, categories, single posts with audio,
  * related posts, the RSS feeds and the podcast feed.
  *
- * English posts are at /blog/<address>/. Spanish posts have addresses starting
- * with "es-" and appear at /es/blog/<rest of the address>/, with their own list,
- * topics and feed.
+ * Posts are at /blog/<address>/. Posts in the site's second language have addresses
+ * starting with its code ("es-") and appear at /es/blog/<rest of the address>/, with
+ * their own list, topics and feed.
  *
  * Audio: a post has an audio version when uploads/audio/<post address>.m4a
  * (or .mp3) exists. Upload it on the post's edit screen, or make one with
@@ -20,13 +20,14 @@ const WORDS_PER_MINUTE = 200;
 /** /blog/ or /es/blog/ for the current language. */
 function blog_base(?string $lang = null): string
 {
-    return ($lang ?? current_lang()) === 'es' ? '/es/blog/' : '/blog/';
+    $lang ??= current_lang();
+    return is_second_lang($lang) ? "/$lang/blog/" : '/blog/';
 }
 
 function post_url(array $post): string
 {
     $slug = $post['slug'];
-    return slug_lang($slug) === 'es' ? '/es/blog/' . substr($slug, 3) . '/' : '/blog/' . $slug . '/';
+    return is_second_lang(slug_lang($slug)) ? blog_base(second_lang()) . slug_without_lang($slug) . '/' : '/blog/' . $slug . '/';
 }
 
 /** Published posts in one language, newest first. */
@@ -102,11 +103,8 @@ function format_post_date(string $iso): string
     if (!$t) {
         return '';
     }
-    if (current_lang() === 'es') {
-        $months = ['enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio', 'julio', 'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre'];
-        return date('j', $t) . ' de ' . $months[(int) date('n', $t) - 1] . ' de ' . date('Y', $t);
-    }
-    return date('F j, Y', $t);
+    // The date_long string says how a language orders the parts: "{month} {day}, {year}" or "{day} de {month} de {year}".
+    return strtr(t('date_long'), ['{day}' => date('j', $t), '{month}' => t('month_' . date('n', $t)), '{year}' => date('Y', $t)]);
 }
 
 function post_meta(array $post): string
@@ -160,13 +158,13 @@ function search_posts(string $query): array
 /** The other language's blog list, for the language switch, when it has posts. */
 function other_blog_path(): ?string
 {
-    $other = current_lang() === 'es' ? 'en' : 'es';
+    $other = other_lang();
     return posts_in_lang($other) ? blog_base($other) : null;
 }
 
 function blog_index(?string $category = null): never
 {
-    $es = current_lang() === 'es';
+    $second = is_second_lang();
     $q = trim((string) ($_GET['q'] ?? ''));
     $posts = posts_in_lang(current_lang());
     $cats = all_categories();
@@ -221,11 +219,11 @@ function blog_index(?string $category = null): never
     }
     $out .= '<h2>' . h(t('follow_blog')) . '</h2><ul>'
         . '<li><a href="' . h(blog_base()) . 'feed.xml">' . h(t('rss_feed')) . '</a></li>'
-        . (!$es && podcast_episodes() ? '<li><a href="/blog/podcast.xml">Podcast feed with audio versions of posts</a>. Add this address to your podcast app.</li>' : '')
-        . (!$es && get_item('pages', 'updates') ? '<li><a href="/updates/">Get new posts by email</a></li>' : '')
+        . (!$second && podcast_episodes() ? '<li><a href="/blog/podcast.xml">Podcast feed with audio versions of posts</a>. Add this address to your podcast app.</li>' : '')
+        . (!$second && get_item('pages', 'updates') ? '<li><a href="/updates/">Get new posts by email</a></li>' : '')
         . '</ul>';
     $pageTitle = $n > 1 ? "$title, " . sprintf(t('page_of'), $n, $pages) : $title;
-    send_html(render_layout($pageTitle, $out, $es ? 'Artículos del blog de ' . site_name() . '.' : 'Articles from the ' . site_name() . ' blog.',
+    send_html(render_layout($pageTitle, $out, t('blog_description'),
         null, $category === null && $q === '' ? other_blog_path() : null));
 }
 
@@ -285,12 +283,12 @@ function xml(string $v): string
 function rss_feed(): never
 {
     $s = settings();
-    $es = current_lang() === 'es';
+    $lang = current_lang();
     header('Content-Type: application/rss+xml; charset=utf-8');
     echo '<?xml version="1.0" encoding="UTF-8"?>' . "\n"
-        . '<rss version="2.0"><channel><title>' . xml($s['site_name'] . ' Blog' . ($es ? ' en español' : '')) . '</title>'
-        . '<link>' . xml(site_url(blog_base())) . '</link><description>' . xml($es ? 'Artículos del blog de ' . site_name() . '.' : $s['description']) . '</description>'
-        . '<language>' . ($es ? 'es' : 'en-us') . '</language>';
+        . '<rss version="2.0"><channel><title>' . xml($s['site_name'] . ' Blog' . t('feed_title_suffix')) . '</title>'
+        . '<link>' . xml(site_url(blog_base())) . '</link><description>' . xml(is_second_lang($lang) ? t('blog_description') : $s['description']) . '</description>'
+        . '<language>' . ($lang === 'en' ? 'en-us' : $lang) . '</language>';
     foreach (array_slice(posts_in_lang(current_lang()), 0, 20) as $post) {
         $url = site_url(post_url($post));
         echo '<item><title>' . xml($post['title']) . '</title><link>' . xml($url) . '</link><guid>' . xml($url) . '</guid>'
@@ -301,10 +299,10 @@ function rss_feed(): never
     exit;
 }
 
-/** English posts with audio. (Spanish audio plays on the post page but isn't in the English podcast.) */
+/** Posts in the primary language with audio. (Second-language audio plays on the post page but isn't in the podcast.) */
 function podcast_episodes(): array
 {
-    return array_values(array_filter(posts_in_lang('en'), fn($p) => post_audio($p['slug']) !== null));
+    return array_values(array_filter(posts_in_lang(primary_lang()), fn($p) => post_audio($p['slug']) !== null));
 }
 
 /** A podcast feed that Apple Podcasts, Overcast and other apps can subscribe to. */
@@ -318,7 +316,7 @@ function podcast_feed(): never
         . '<title>' . xml($s['site_name'] . ' Blog, read aloud') . '</title>'
         . '<link>' . xml(site_url('/blog/')) . '</link>'
         . '<atom:link href="' . xml(site_url('/blog/podcast.xml')) . '" rel="self" type="application/rss+xml"/>'
-        . '<language>en-us</language>'
+        . '<language>' . (primary_lang() === 'en' ? 'en-us' : primary_lang()) . '</language>'
         . '<description>' . xml('Audio versions of articles about assistive technology from ' . $s['site_name'] . '.') . '</description>'
         . '<itunes:author>' . xml($s['site_name']) . '</itunes:author>'
         . '<itunes:image href="' . xml(site_url($cover)) . '"/>'
