@@ -300,7 +300,9 @@ function page_form(?array $values = null, array $errors = [], ?string $origSlug 
     $isNew = $existing === null;
     $isHome = $origSlug === 'home';
 
-    $body = '<form method="post" action="' . h(admin_url('page', $isNew ? [] : ['slug' => $origSlug])) . '" data-editor-form data-editor-key="fc-editor-page" data-editor-default="html">'
+    // Accessibility check (lib/features/a11y-check.php): warnings found when this page was last saved.
+    $body = (function_exists('a11y_warnings_html') ? a11y_warnings_html($existing, 'pages') : '')
+        . '<form method="post" action="' . h(admin_url('page', $isNew ? [] : ['slug' => $origSlug])) . '" data-editor-form data-editor-key="fc-editor-page" data-editor-default="html">'
         . csrf_field() . updated_field('pages', $isNew ? null : $origSlug)
         . text_field('title', 'Page title', (string) $v['title'], ['required' => true, 'error' => $errors['title'] ?? null,
             'hint' => 'Shown in the browser tab and, unless you turn it off below, as the main heading of the page.']);
@@ -503,7 +505,9 @@ function post_form(?array $values = null, array $errors = [], ?string $origSlug 
 
     $known = implode(', ', array_column(all_categories(), 'name'));
     $audio = $isNew ? null : post_audio((string) $origSlug);
-    $body = '<form method="post" action="' . h(admin_url('post', $isNew ? [] : ['slug' => $origSlug])) . '" enctype="multipart/form-data" data-editor-form>'
+    // Accessibility check (lib/features/a11y-check.php): warnings found when this post was last saved.
+    $body = (function_exists('a11y_warnings_html') ? a11y_warnings_html($existing, 'posts') : '')
+        . '<form method="post" action="' . h(admin_url('post', $isNew ? [] : ['slug' => $origSlug])) . '" enctype="multipart/form-data" data-editor-form>'
         . csrf_field() . updated_field('posts', $isNew ? null : $origSlug)
         . text_field('title', 'Post title', (string) $v['title'], ['required' => true, 'error' => $errors['title'] ?? null])
         . textarea_field('body', 'Post content', (string) $v['body'], ['rows' => 24, 'class' => 'field-wide', 'id' => 'post-body',
@@ -897,7 +901,9 @@ function media_list(): never
         . '<button type="submit" class="button">Upload file</button></form>'
         . '<p>To use a file, copy its address and paste it into a link (<code>&lt;a href="…"&gt;</code>) or an image (<code>&lt;img src="…" alt="Describe the image"&gt;</code>). '
         . 'In the blog editor you can also upload images straight from the Insert image button.</p>'
-        . '<p id="copy-status" class="visually-hidden" role="status"></p>';
+        . '<p id="copy-status" class="visually-hidden" role="status"></p>'
+        // Alt text help (lib/features/alt-text.php): one line on how Describe works, or why it is off.
+        . (function_exists('alt_text_media_note') ? alt_text_media_note() : '');
     $files = uploaded_files();
     if (!$files) {
         $body .= '<p>No files uploaded yet.</p>';
@@ -908,13 +914,16 @@ function media_list(): never
             $preview = $f['image'] ? '<img src="' . h($f['url']) . '" alt="" class="thumb">' : '';
             $rows .= '<tr><td>' . $preview . '</td><th scope="row"><a href="' . h($f['url']) . '">' . $name . '</a></th>'
                 . '<td><code>' . h($f['url']) . '</code></td><td>' . format_bytes($f['size']) . '</td><td>' . h(format_time($f['time'])) . '</td>'
+                // Alt text help: the Description column (a saved description and the Describe button) for images.
+                . (function_exists('alt_text_media_cell') ? '<td>' . alt_text_media_cell($f) . '</td>' : '')
                 . '<td class="actions"><button type="button" class="button-link" data-copy="' . h($f['url']) . '">Copy address<span class="visually-hidden"> of ' . $name . '</span></button> '
                 . '<a href="' . h(admin_url('media_delete', ['file' => $f['url']])) . '">Delete<span class="visually-hidden"> ' . $name . '</span></a></td></tr>';
         }
-        $body .= '<div class="table-wrap"><table><caption>Uploaded files, newest first</caption><thead><tr><th scope="col"><span class="visually-hidden">Preview</span></th><th scope="col">File</th><th scope="col">Address</th><th scope="col">Size</th><th scope="col">Uploaded</th><th scope="col">Actions</th></tr></thead>'
+        $body .= '<div class="table-wrap"><table><caption>Uploaded files, newest first</caption><thead><tr><th scope="col"><span class="visually-hidden">Preview</span></th><th scope="col">File</th><th scope="col">Address</th><th scope="col">Size</th><th scope="col">Uploaded</th>'
+            . (function_exists('alt_text_media_cell') ? '<th scope="col">Description</th>' : '') . '<th scope="col">Actions</th></tr></thead>'
             . "<tbody>$rows</tbody></table></div>";
     }
-    admin_screen('Images and files', $body, 'media');
+    admin_screen('Images and files', $body, 'media', ['scripts' => function_exists('alt_text_media_scripts') ? alt_text_media_scripts() : '']);
 }
 
 function media_upload(): never
