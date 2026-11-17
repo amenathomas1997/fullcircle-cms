@@ -2,11 +2,12 @@
 /**
  * Set up a brand-new site from the command line:
  *   php tools/setup.php
- * It asks for the site's name and details, the control panel password and
- * which optional features to turn on, then creates the starter pages.
+ * It asks for the site's name and details, the owner's account (name, email
+ * and password) and which optional features to turn on, then creates the starter pages.
  * Every answer can also be given as an environment variable (SETUP_SITE_NAME,
  * SETUP_SITE_URL, SETUP_EMAIL, SETUP_PHONE, SETUP_TIMEZONE, SETUP_PALETTE,
- * SETUP_SPANISH=yes, SETUP_PASSWORD, SETUP_LEGAL_NAME, SETUP_TAGLINE), and
+ * SETUP_SPANISH=yes, SETUP_OWNER_NAME, SETUP_OWNER_EMAIL (defaults to SETUP_EMAIL),
+ * SETUP_PASSWORD, SETUP_LEGAL_NAME, SETUP_TAGLINE), and
  * `php tools/setup.php --yes` accepts the defaults for anything not given.
  */
 
@@ -40,8 +41,8 @@ function ask_setup(string $envKey, string $prompt, string $default = '', bool $s
     return $value !== '' ? $value : $default;
 }
 
-if (config()['password_hash'] !== '' && all_items('pages')) {
-    fwrite(STDERR, "This site is already set up. Use the control panel to change it, or php tools/set-password.php to reset the password.\n");
+if ((config()['password_hash'] !== '' || accounts_exist()) && all_items('pages')) {
+    fwrite(STDERR, "This site is already set up. Use the control panel to change it, or php tools/set-password.php to reset a password.\n");
     exit(1);
 }
 
@@ -78,8 +79,17 @@ if ($problems) {
 }
 
 $password = '';
-if (config()['password_hash'] === '') {
-    $password = ask_setup('SETUP_PASSWORD', 'Control panel password (at least 12 characters)', '', true);
+$ownerName = '';
+$ownerEmail = '';
+if (!accounts_exist()) {
+    echo "\nYour owner account, for signing in to the control panel.\n";
+    $ownerName = ask_setup('SETUP_OWNER_NAME', 'Your name (shown next to the changes you make)', 'Site owner');
+    $ownerEmail = strtolower(ask_setup('SETUP_OWNER_EMAIL', 'Your sign-in email address', $email !== '' ? $email : 'owner@' . (parse_url($url, PHP_URL_HOST) ?: 'example.com')));
+    if ($ownerName === '' || !filter_var($ownerEmail, FILTER_VALIDATE_EMAIL)) {
+        fwrite(STDERR, "The owner needs a name and an email address in the right format, like name@example.com. Nothing was changed.\n");
+        exit(1);
+    }
+    $password = ask_setup('SETUP_PASSWORD', 'Your password (at least 12 characters)', '', true);
     if (strlen($password) < 12) {
         fwrite(STDERR, "The password must be at least 12 characters. Nothing was changed.\n");
         exit(1);
@@ -104,8 +114,9 @@ save_settings(array_merge(settings(), [
 ]));
 // Dates from here on (the first post, the revisions) use the site's own time zone.
 date_default_timezone_set($tz);
+save_config(['contact_recipients' => $email]);
 if ($password !== '') {
-    save_config(['password_hash' => password_hash($password, PASSWORD_DEFAULT), 'contact_recipients' => $email]);
+    create_user($ownerName, $ownerEmail, $password, 'owner');
 }
 foreach ([DATA_DIR . '/cache', DATA_DIR . '/stats', UPLOAD_DIR . '/audio'] as $dir) {
     if (!is_dir($dir)) {
@@ -116,7 +127,7 @@ create_starter_content($spanish);
 
 echo "\nDone. $name is set up with ", count(all_items('pages')), " pages and one blog post.\n";
 echo "Next:\n";
-echo "  1. Sign in at $url/admin/ and look around Settings.\n";
+echo "  1. Sign in at $url/admin/ as $ownerEmail and look around Settings. Add other people on the People screen.\n";
 echo "  2. Under Settings > Email sending, choose PHP mail or Microsoft 365 and send yourself a test.\n";
 echo "  3. Set up the three cron jobs in README.md: email updates, the link check and the nightly backup.\n";
 echo "To try it on this computer first: php -S localhost:8000 router.php\n";

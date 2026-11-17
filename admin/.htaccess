@@ -1,4 +1,4 @@
 # Only the control panel entry points (index.php, oauth.php) and its scripts and styles are served.
-<FilesMatch "^(admin-lib|features|accounts)\.php$">
+<FilesMatch "^(admin-lib|features|accounts|people)\.php$">
   Require all denied
 </FilesMatch>

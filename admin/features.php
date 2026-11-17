@@ -255,7 +255,7 @@ function backup_download(): never
         $it = new RecursiveIteratorIterator(new RecursiveDirectoryIterator($dir, FilesystemIterator::SKIP_DOTS));
         foreach ($it as $f) {
             $name = $prefix . '/' . str_replace('\\', '/', substr($f->getPathname(), strlen($dir) + 1));
-            if (preg_match('#(^|/)(config\.php|graph-token\.php|salt-[^/]+|login-attempts\.json|contact-rate\.json|cache/.*)$#', $name)) {
+            if (preg_match('#(^|/)(config\.php|graph-token\.php|salt-[^/]+|login-attempts\.json|contact-rate\.json|users\.json|password-tokens\.json|password-reset-rate\.json|cache/.*)$#', $name)) {
                 continue;
             }
             $zip->addFile($f->getPathname(), $name);

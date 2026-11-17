@@ -14,7 +14,7 @@ start_admin_session();
 $action = (string) ($_GET['a'] ?? '');
 $post = $_SERVER['REQUEST_METHOD'] === 'POST';
 
-if (config()['password_hash'] === '') {
+if (config()['password_hash'] === '' && !accounts_exist()) {
     setup_screen($post);
 }
 if ($action === 'oauth_start') {
@@ -24,13 +24,34 @@ if ($action === 'oauth') {
     m365_callback();
 }
 if (!signed_in()) {
+    accounts_admin();
+    accounts_guest_screen($action, $post);
     login_screen($post);
 }
 if ($post) {
     check_csrf();
 }
 // Changes are recorded with the name of the person who made them.
-$GLOBALS['current_editor'] = (string) ($_SESSION['admin_name'] ?? 'Site password');
+$GLOBALS['current_editor'] = (string) ($_SESSION['admin_name'] ?? 'Unknown');
+
+// The least role each screen needs: owner > editor > author. Anything not listed is for editors and owners.
+const ACTION_ROLES = [
+    '' => 'author', 'posts' => 'author', 'post' => 'author', 'media' => 'author', 'media_delete' => 'author', 'upload_image' => 'author',
+    'preview' => 'author', 'revisions' => 'author', 'delete' => 'author', 'logout' => 'author', 'account' => 'author',
+    'template' => 'owner', 'settings' => 'owner', 'backup' => 'owner', 'people' => 'owner', 'activity' => 'owner',
+];
+require_role(ACTION_ROLES[$action] ?? 'editor');
+// Authors only reach blog posts through the shared delete, revisions and preview screens.
+if (!role_at_least('editor') && in_array($action, ['delete', 'revisions', 'preview'], true)
+    && (($_GET['type'] ?? 'posts') !== 'posts' || !str_starts_with((string) ($_GET['key'] ?? 'posts/'), 'posts/'))) {
+    require_role('editor');
+}
+if ($action === 'backup') {
+    activity_log('downloaded a backup');
+}
+if ($action === 'settings' && $post) {
+    activity_watch_settings((string) ($_POST['part'] ?? ''));
+}
 
 // Screens for features that are turned off don't exist.
 $needsFeature = ['resources' => 'resources', 'resource' => 'resources', 'testimonials' => 'testimonials', 'videos' => 'videos', 'stories' => 'stories', 'updates' => 'updates'];
@@ -106,10 +127,17 @@ function setup_screen(bool $post): never
             . '<p>Or create a file called <code>data/setup-code.txt</code> containing any code of 12 or more characters, then reload this page and type the code.</p>');
     }
     $v = ['site_name' => trim((string) ($_POST['site_name'] ?? '')), 'site_url' => rtrim(trim((string) ($_POST['site_url'] ?? ('https://' . ($_SERVER['HTTP_HOST'] ?? 'example.com')))), '/'),
-        'contact_email' => trim((string) ($_POST['contact_email'] ?? '')), 'spanish' => !empty($_POST['spanish'])];
+        'contact_email' => trim((string) ($_POST['contact_email'] ?? '')), 'spanish' => !empty($_POST['spanish']),
+        'owner_name' => trim((string) ($_POST['owner_name'] ?? '')), 'owner_email' => normalize_email((string) ($_POST['owner_email'] ?? ''))];
     $errors = [];
     if ($post) {
         $pw = (string) ($_POST['password'] ?? '');
+        if ($v['owner_name'] === '') {
+            $errors['owner_name'] = 'Enter your name.';
+        }
+        if (!filter_var($v['owner_email'], FILTER_VALIDATE_EMAIL)) {
+            $errors['owner_email'] = 'Enter your email address in the right format, like name@example.com.';
+        }
         if ($needsCode && (strlen(trim((string) file_get_contents($codeFile))) < 12 || !hash_equals(trim((string) file_get_contents($codeFile)), trim((string) ($_POST['code'] ?? ''))))) {
             $errors['code'] = 'That code doesn’t match data/setup-code.txt.';
         }
@@ -130,12 +158,13 @@ function setup_screen(bool $post): never
         if (!$errors) {
             save_settings(array_merge(settings(), ['site_name' => $v['site_name'], 'site_url' => $v['site_url'], 'contact_email' => $v['contact_email'],
                 'features' => array_merge(FEATURE_DEFAULTS, ['spanish' => $v['spanish']])]));
-            save_config(['password_hash' => password_hash($pw, PASSWORD_DEFAULT), 'contact_recipients' => $v['contact_email']]);
+            save_config(['contact_recipients' => $v['contact_email']]);
+            $owner = create_user($v['owner_name'], $v['owner_email'], $pw, 'owner');
             create_starter_content($v['spanish']);
             if (is_file($codeFile)) {
                 @unlink($codeFile);
             }
-            begin_signed_in_session('Site password');
+            accounts_sign_in($owner);
             flash('Your site is set up and you are signed in. Start with Settings to add your details, then edit the starter pages.');
             go(admin_url('settings'));
         }
@@ -147,8 +176,10 @@ function setup_screen(bool $post): never
         . text_field('site_url', 'Site address', $v['site_url'], ['type' => 'url', 'required' => true, 'spellcheck' => 'false', 'error' => $errors['site_url'] ?? null])
         . text_field('contact_email', 'Public contact email (optional)', $v['contact_email'], ['type' => 'email', 'error' => $errors['contact_email'] ?? null])
         . checkbox_field('spanish', 'Add Spanish pages too', $v['spanish'])
-        . '<input type="text" name="username" value="admin" autocomplete="username" aria-label="Username" hidden>'
-        . text_field('password', 'Control panel password', '', ['type' => 'password', 'required' => true, 'autocomplete' => 'new-password', 'hint' => 'At least 12 characters. A short sentence you will remember works well.', 'error' => $errors['password'] ?? null])
+        . '<h2>Your owner account</h2><p>You sign in to the control panel with these. You can add other people later on the People screen.</p>'
+        . text_field('owner_name', 'Your name', $v['owner_name'], ['required' => true, 'autocomplete' => 'name', 'error' => $errors['owner_name'] ?? null, 'hint' => 'Shown next to the changes you make.'])
+        . text_field('owner_email', 'Your email address', $v['owner_email'], ['type' => 'email', 'required' => true, 'autocomplete' => 'username', 'spellcheck' => 'false', 'error' => $errors['owner_email'] ?? null, 'hint' => 'You sign in with this, and password links are sent to it.'])
+        . text_field('password', 'Your password', '', ['type' => 'password', 'required' => true, 'autocomplete' => 'new-password', 'hint' => 'At least 12 characters. A short sentence you will remember works well.', 'error' => $errors['password'] ?? null])
         . text_field('confirm', 'Type the password again', '', ['type' => 'password', 'required' => true, 'autocomplete' => 'new-password', 'error' => $errors['confirm'] ?? null])
         . '<button type="submit" class="button">Create my site</button></form>';
     admin_screen('Set up your site', $body, '', ['errors' => $errors]);
@@ -169,34 +200,54 @@ function logo_select(string $current): string
 function login_screen(bool $post): never
 {
     $errors = [];
+    $hasAccounts = accounts_exist();
+    $legacy = owner_count() === 0 && config()['password_hash'] !== '';   // An older site: no owner yet, still a shared site password.
+    $email = normalize_email((string) ($_POST['email'] ?? ''));
     if ($post && ($_GET['a'] ?? '') === 'login') {
+        $password = (string) ($_POST['password'] ?? '');
+        $sitePassword = (string) ($_POST['site_password'] ?? '');
+        $next = (string) ($_POST['next'] ?? '');
+        $field = $sitePassword !== '' ? 'site_password' : 'password';
         if (login_locked()) {
-            $errors['password'] = 'Too many wrong passwords. For security, sign-in is paused for 15 minutes.';
+            $errors[$field] = 'Too many wrong passwords. For security, sign-in is paused for 15 minutes.';
         } elseif (!hash_equals($_SESSION['csrf'] ?? '', (string) ($_POST['csrf'] ?? ''))) {
-            $errors['password'] = 'That sign-in form had expired. Please try again.';
-        } elseif (password_verify((string) ($_POST['password'] ?? ''), config()['password_hash'])) {
-            begin_signed_in_session('Site password');
-            $next = (string) ($_POST['next'] ?? '');
-            go(str_starts_with($next, ADMIN_URL) ? $next : ADMIN_URL);
+            $errors[$field] = 'That sign-in form had expired. Please try again.';
+        } elseif ($legacy && $sitePassword !== '' && password_verify($sitePassword, config()['password_hash'])) {
+            $_SESSION['legacy_ok'] = time();
+            go(admin_url('create_owner'));
+        } elseif ($hasAccounts && $sitePassword === '' && ($user = find_user_by_email($email)) && password_verify($password, (string) $user['password_hash'])) {
+            accounts_continue_sign_in($user, $next);
         } else {
             record_failed_login();
-            $errors['password'] = 'That password is not right. Check it and try again.';
+            activity_log('failed sign-in', $field === 'site_password' ? 'wrong site password' : 'wrong email address or password', find_user_by_email($email), $email);
+            $errors[$field] = $field === 'site_password' ? 'That password is not right. Check it and try again.' : 'That email address and password don’t match an account. Check them and try again.';
         }
     }
     $next = $_POST['next'] ?? ($_SERVER['REQUEST_URI'] ?? ADMIN_URL);
+    $nextField = '<input type="hidden" name="next" value="' . h((string) $next) . '">';
     $body = m365_enabled() ? '<p><a class="button" href="' . h(admin_url('oauth_start')) . '">Sign in with Microsoft 365</a></p>'
-        . '<h2>Or sign in with the site password</h2>' : '';
-    $body .= '<form method="post" action="' . h(admin_url('login')) . '" class="narrow">' . csrf_field()
-        . '<input type="text" name="username" value="admin" autocomplete="username" aria-label="Username" hidden>'
-        . '<input type="hidden" name="next" value="' . h((string) $next) . '">'
-        . text_field('password', 'Password', '', ['type' => 'password', 'required' => true, 'autocomplete' => 'current-password', 'error' => $errors['password'] ?? null])
-        . '<button type="submit" class="button">Sign in</button></form>'
-        . '<p>Forgot your password? Run <code>php tools/set-password.php</code> in the website folder to set a new one.</p>';
+        . '<h2>Or sign in with your email address and password</h2>' : '';
+    if ($hasAccounts) {
+        $body .= '<form method="post" action="' . h(admin_url('login')) . '" class="narrow">' . csrf_field() . $nextField
+            . text_field('email', 'Email address', $email, ['type' => 'email', 'required' => true, 'autocomplete' => 'username', 'spellcheck' => 'false'])
+            . text_field('password', 'Password', '', ['type' => 'password', 'required' => true, 'autocomplete' => 'current-password', 'error' => $errors['password'] ?? null])
+            . '<button type="submit" class="button">Sign in</button></form>'
+            . '<p><a href="' . h(admin_url('forgot')) . '">Forgot your password?</a></p>';
+    }
+    if ($legacy) {
+        $body .= ($hasAccounts ? '<h2>Or sign in with the site password</h2><p>The site owner signs in with the shared site password once more, to create their owner account.</p>' : '')
+            . '<form method="post" action="' . h(admin_url('login')) . '" class="narrow">' . csrf_field() . $nextField
+            . '<input type="text" name="username" value="admin" autocomplete="username" aria-label="Username" hidden>'
+            . text_field('site_password', 'Site password', '', ['type' => 'password', 'required' => true, 'autocomplete' => 'current-password', 'error' => $errors['site_password'] ?? null])
+            . '<button type="submit" class="button">Sign in</button></form>'
+            . '<p>Forgot the site password? Whoever hosts the site can create your owner account by running <code>php tools/set-password.php</code> in the website folder.</p>';
+    }
     admin_screen('Sign in', $body, '', ['errors' => $errors]);
 }
 
 function logout(): never
 {
+    activity_log('signed out');
     $_SESSION = [];
     session_regenerate_id(true);
     flash('You are signed out.');
@@ -522,7 +573,8 @@ function post_form(?array $values = null, array $errors = [], ?string $origSlug 
             'error' => $errors['post-body'] ?? null,
             'hint' => 'Choose an editor above: Visual (Alt and F10 for its toolbar, Alt and 0 for shortcuts), Blocks (each paragraph and heading is its own form field, best with a screen reader) or HTML. '
                 . 'The post title is the main heading, so start sections with Heading 2.'])
-        . radio_field('status', 'Status', ['published' => 'Published', 'draft' => 'Draft, only you can see it'], (string) ($v['status'] ?? 'draft'))
+        . (can_publish() ? radio_field('status', 'Status', ['published' => 'Published', 'draft' => 'Draft, only you can see it'], (string) ($v['status'] ?? 'draft'))
+            : '<input type="hidden" name="status" value="draft"><p class="hint" id="status">Status: Draft. Your account is an author, so your posts stay drafts until an editor or the site owner publishes them.</p>')
         . text_field('date', 'Publish date and time', substr((string) $v['date'], 0, 16), ['type' => 'datetime-local', 'required' => true, 'error' => $errors['date'] ?? null,
             'hint' => 'Pick a future date to schedule the post. It appears on the blog at that time.'])
         . text_field('slug', 'Post address', (string) $v['slug'], ['prefix' => site_url('/blog/'), 'spellcheck' => 'false', 'autocomplete' => 'off',
@@ -567,7 +619,7 @@ function post_save(): never
     $v = [
         'title' => trim((string) ($_POST['title'] ?? '')),
         'slug' => strtolower(trim((string) ($_POST['slug'] ?? ''))),
-        'status' => ($_POST['status'] ?? '') === 'published' ? 'published' : 'draft',
+        'status' => ($_POST['status'] ?? '') === 'published' && can_publish() ? 'published' : 'draft',
         'date' => (string) ($_POST['date'] ?? ''),
         'excerpt' => trim((string) ($_POST['excerpt'] ?? '')),
         'categories' => array_values(array_unique(array_filter(array_map('trim', explode(',', (string) ($_POST['categories'] ?? '')))))),
@@ -1256,7 +1308,7 @@ function settings_form(array $errors = [], array $values = []): never
         ? 'A secret is saved. Leave this empty to keep it, or paste a new one to replace it.'
         : 'From Certificates and secrets in your app registration. Copy the secret’s Value, not its ID.';
 
-    $body = '<nav aria-label="On this screen"><ul><li><a href="#site-heading">Site details</a></li><li><a href="#features">Features</a></li><li><a href="#email-settings">Email sending</a></li><li><a href="#assistant-heading">Ask a question assistant</a></li><li><a href="#bookings-heading">Next opening on Book Services</a></li><li><a href="#people-heading">Microsoft 365 sign-in</a></li><li><a href="#password-heading">Change password</a></li></ul></nav>'
+    $body = '<nav aria-label="On this screen"><ul><li><a href="#site-heading">Site details</a></li><li><a href="#features">Features</a></li><li><a href="#email-settings">Email sending</a></li><li><a href="#assistant-heading">Ask a question assistant</a></li><li><a href="#bookings-heading">Next opening on Book Services</a></li><li><a href="#people-heading">Microsoft 365 sign-in</a></li><li><a href="#password-heading">Your password and people</a></li></ul></nav>'
 
         . '<section aria-labelledby="site-heading"><h2 id="site-heading">Site details</h2>'
         . '<form method="post" action="' . h(admin_url('settings')) . '">' . csrf_field() . '<input type="hidden" name="part" value="site">'
@@ -1312,13 +1364,9 @@ function settings_form(array $errors = [], array $values = []): never
         . bookings_settings_html($errors)
         . people_settings_html($errors)
         . implode('', array_map(fn($s) => (string) $s['html']($errors), registered('settings')))
-        . '<section aria-labelledby="password-heading"><h2 id="password-heading">Change password</h2>'
-        . '<form method="post" action="' . h(admin_url('settings')) . '#password-heading">' . csrf_field() . '<input type="hidden" name="part" value="password">'
-        . '<input type="text" name="username" value="admin" autocomplete="username" aria-label="Username" hidden>'
-        . text_field('current_password', 'Current password', '', ['type' => 'password', 'autocomplete' => 'current-password', 'required' => true, 'error' => $errors['current_password'] ?? null])
-        . text_field('new_password', 'New password', '', ['type' => 'password', 'autocomplete' => 'new-password', 'required' => true, 'error' => $errors['new_password'] ?? null, 'hint' => 'At least 12 characters.'])
-        . text_field('confirm_password', 'Type the new password again', '', ['type' => 'password', 'autocomplete' => 'new-password', 'required' => true, 'error' => $errors['confirm_password'] ?? null])
-        . '<button type="submit" class="button">Change password</button></form></section>';
+        . '<section aria-labelledby="password-heading"><h2 id="password-heading">Your password and people</h2>'
+        . '<p>Change your own password or turn on two-factor sign-in under <a href="' . h(admin_url('account')) . '">My account</a>. '
+        . 'Add people, change their roles or reset their passwords on the <a href="' . h(admin_url('people')) . '">People</a> screen, and see what everyone has done under <a href="' . h(admin_url('activity')) . '">Activity</a>.</p></section>';
     admin_screen('Settings', $body, 'settings', ['errors' => $errors]);
 }
 
@@ -1465,27 +1513,6 @@ function settings_save(): never
     }
     if ($part === 'people') {
         people_settings_save();
-    }
-    if ($part === 'password') {
-        $current = (string) ($_POST['current_password'] ?? '');
-        $new = (string) ($_POST['new_password'] ?? '');
-        if (!password_verify($current, config()['password_hash'])) {
-            $errors['current_password'] = 'Your current password is not right.';
-        }
-        if (strlen($new) < 12) {
-            $errors['new_password'] = 'Choose a new password that is at least 12 characters long.';
-        } elseif ($new !== ($_POST['confirm_password'] ?? '')) {
-            $errors['confirm_password'] = 'The two new passwords do not match.';
-        }
-        if ($errors) {
-            settings_form($errors);
-        }
-        // Anyone else signed in with the old password is signed out; this session carries on.
-        save_config(['password_hash' => password_hash($new, PASSWORD_DEFAULT), 'sessions_valid_from' => time()]);
-        session_regenerate_id(true);
-        $_SESSION['login_at'] = time();
-        flash('Your password has been changed. Anyone else who was signed in with the old password has been signed out.');
-        go(admin_url('settings'));
     }
     not_found_screen();
 }
