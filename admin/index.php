@@ -810,7 +810,9 @@ function preview(): never
 function revision_key(): string
 {
     $key = (string) ($_GET['key'] ?? '');
-    if (!preg_match('#^(pages|posts|resources|videos|stories)/[a-z0-9-]+$|^template/(layout|css|footer|footer-es)$#', $key)) {
+    // Any item type (features add their own through ITEM_TYPES), or the site template parts.
+    if (!preg_match('#^([a-z]+)/[a-z0-9-]+$#', $key, $m) || ($m[1] !== 'template' && !in_array($m[1], ITEM_TYPES, true))
+        || ($m[1] === 'template' && !in_array(substr($key, 9), ['layout', 'css', 'footer', 'footer-es'], true))) {
         not_found_screen();
     }
     return $key;
@@ -824,7 +826,9 @@ function revision_label(string $key): array
         'posts' => ['the post “' . (get_item('posts', $slug)['title'] ?? $slug) . '”', admin_url('post', ['slug' => $slug])],
         'resources' => ['the cheat sheet “' . (get_item('resources', $slug)['title'] ?? $slug) . '”', admin_url('resource', ['slug' => $slug])],
         'videos', 'stories' => [COLLECTIONS[$type]['singular'] . ' “' . (get_item($type, $slug)['title'] ?? $slug) . '”', admin_url($type, ['slug' => $slug])],
-        default => [['layout' => 'the site layout', 'css' => 'the stylesheet', 'footer' => 'the footer', 'footer-es' => 'the Spanish footer'][$slug], admin_url('template')],
+        'template' => [['layout' => 'the site layout', 'css' => 'the stylesheet', 'footer' => 'the footer', 'footer-es' => 'the Spanish footer'][$slug] ?? 'the template', admin_url('template')],
+        // Item types added by features: the screen is named after the type (events, forms, products).
+        default => ['the ' . rtrim($type, 's') . ' “' . (get_item($type, $slug)['title'] ?? get_item($type, $slug)['name'] ?? $slug) . '”', admin_url($type, ['slug' => $slug])],
     };
 }
 
