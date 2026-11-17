@@ -60,13 +60,36 @@ if (!$apply) {
 }
 
 if ($log !== '') {
-    $dirty = trim((string) git_run(['status', '--porcelain', '--untracked-files=no']));
-    if ($dirty !== '') {
-        fwrite(STDERR, "There are local changes to the kit's files, so a fast-forward pull would fail:\n$dirty\nCommit or stash them first (site/ and content/ are never involved).\n");
-        exit(1);
+    // The template and stylesheet are tracked by git but edited in the control panel, so the site's own
+    // versions are set aside for the pull and put back after it: what the owner wrote always wins.
+    $owned = ['content/layout.html', 'assets/css/site.css'];
+    // Each porcelain line is two status letters, a space and the path; the leading space matters.
+    $dirty = array_filter(explode("\n", rtrim((string) git_run(['status', '--porcelain', '--untracked-files=no']), "\n")), 'strlen');
+    $kept = [];
+    foreach ($dirty as $line) {
+        $path = substr($line, 3);
+        if (in_array($path, $owned, true)) {
+            $kept[$path] = (string) file_get_contents(ROOT . '/' . $path);
+        } else {
+            fwrite(STDERR, "There are local changes to the kit's files, so a fast-forward pull would fail:\n" . implode("\n", $dirty) . "\nCommit or stash them first (site/, content/ and uploads/ are never involved).\n");
+            exit(1);
+        }
+    }
+    $before_kit = [];
+    foreach ($kept as $path => $_) {
+        $before_kit[$path] = (string) git_run(['show', "HEAD:$path"]);
+        git_run(['checkout', '--', $path]);
     }
     echo "Pulling...\n";
-    if (git_run(['pull', '--ff-only', '--quiet', $remote], 300) === null) {
+    $pulled = git_run(['pull', '--ff-only', '--quiet', $remote], 300) !== null;
+    foreach ($kept as $path => $contents) {
+        $kitNow = (string) file_get_contents(ROOT . '/' . $path);
+        write_file(ROOT . '/' . $path, $contents);
+        if ($pulled && $kitNow !== $before_kit[$path]) {
+            echo "  Note: the kit changed $path, but this site's own version (edited in the control panel) was kept. Compare them by hand if you want the kit's change.\n";
+        }
+    }
+    if (!$pulled) {
         fwrite(STDERR, "git pull --ff-only failed. The branch may have diverged from $ref; run git status to see.\n");
         exit(1);
     }

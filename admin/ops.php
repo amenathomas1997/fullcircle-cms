@@ -660,6 +660,6 @@ function ops_import(): never
     ops_refresh();
     $from = (string) ($manifest['site_name'] ?? 'another site');
     ops_log("Imported the site “{$from}” ($n files, exported " . ($manifest['exported'] ?? 'unknown date') . ' from kit version ' . ($manifest['version'] ?? 'unknown') . ')');
-    flash("Imported “{$from}” ($n files). " . ($safety !== '' ? "The site as it was before is saved at $safety." : '') . ' Check Settings and the home page.');
+    flash("Imported “{$from}” ($n files). " . ($safety !== '' ? "The site as it was before is saved at $safety. " : '') . 'Check Settings and the home page.');
     go(admin_url('backups'));
 }

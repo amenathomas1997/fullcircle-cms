@@ -289,7 +289,6 @@ function fetch_site_status(array $site): array
     $body = (string) curl_exec($ch);
     $code = (int) curl_getinfo($ch, CURLINFO_RESPONSE_CODE);
     $err = curl_error($ch);
-    curl_close($ch);
     if ($code === 0) {
         return ['ok' => false, 'status' => null, 'error' => 'No answer' . ($err !== '' ? " ($err)" : '') . '.'];
     }
