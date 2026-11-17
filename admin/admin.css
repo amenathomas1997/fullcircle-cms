@@ -184,3 +184,7 @@ table.stats td:last-child { width: 40%; }
 .nav-group { display: flex; flex-wrap: wrap; align-items: center; gap: .25rem .5rem; }
 .nav-group-title { margin: 0; font-size: .8rem; font-weight: 800; letter-spacing: .04em; text-transform: uppercase; color: var(--muted, #4a4a4a); }
 .nav-group ul { display: flex; flex-wrap: wrap; gap: .25rem .5rem; margin: 0; padding: 0; list-style: none; }
+
+/* Pages list: pages inside other pages are indented under their parent. */
+.tree-level-2 { padding-left: 2rem; }
+.tree-level-3 { padding-left: 3.5rem; }

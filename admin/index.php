@@ -319,20 +319,22 @@ function status_label(array $item): string
 function pages_list(): never
 {
     $rows = '';
-    foreach (all_items('pages') as $p) {
+    // Pages inside other pages are listed under their parent, indented (lib/features/nested-pages.php).
+    foreach (pages_in_tree_order() as $p) {
         $slug = $p['slug'];
         $title = h($p['title']);
+        $level = (int) ($p['level'] ?? 1);
         $actions = '<a href="' . h(admin_url('page', ['slug' => $slug])) . '">Edit<span class="visually-hidden"> ' . $title . '</span></a>'
             . ' <a href="' . h(page_path($slug)) . '">View<span class="visually-hidden"> ' . $title . '</span></a>';
         if ($slug !== 'home') {
             $actions .= ' <a href="' . h(admin_url('delete', ['type' => 'pages', 'slug' => $slug])) . '">Delete<span class="visually-hidden"> ' . $title . '</span></a>';
         }
-        $rows .= '<tr><th scope="row">' . $title . ($slug === 'home' ? ' <span class="tag">Home page</span>' : '') . '</th>'
+        $rows .= '<tr><th scope="row" class="tree-level-' . $level . '">' . ($level > 1 ? '<span class="visually-hidden">Level ' . $level . ': </span>' : '') . $title . ($slug === 'home' ? ' <span class="tag">Home page</span>' : '') . '</th>'
             . '<td>' . h(page_path($slug)) . '</td><td>' . status_label($p) . '</td>'
             . '<td>' . h(format_time($p['updated'] ?? '')) . (($p['updated_by'] ?? '') !== '' ? ', by ' . h($p['updated_by']) : '') . '</td><td class="actions">' . $actions . '</td></tr>';
     }
     $body = '<p><a class="button" href="' . h(admin_url('page')) . '">Add a new page</a></p>'
-        . '<div class="table-wrap"><table><caption>All pages, in alphabetical order</caption>'
+        . '<div class="table-wrap"><table><caption>All pages, in alphabetical order; a page inside another page is listed under it, indented</caption>'
         . '<thead><tr><th scope="col">Title</th><th scope="col">Address</th><th scope="col">Status</th><th scope="col">Last changed</th><th scope="col">Actions</th></tr></thead>'
         . "<tbody>$rows</tbody></table></div>"
         . '<p>To put the contact form on a page, type <code>[contact-form]</code> where you want it in the page’s HTML.</p>';
@@ -366,7 +368,8 @@ function page_form(?array $values = null, array $errors = [], ?string $origSlug 
                 . 'For a Spanish page, start it with <code>es-</code>, for example <code>es-contacto</code>; it will appear at <code>/es/contacto/</code>.'
                 . ($isNew ? '' : ' If you change it, links to the old address will stop working.')]);
     }
-    $body .= textarea_field('body', 'Page content', (string) $v['body'], ['rows' => 28, 'code' => true, 'class' => 'field-wide', 'id' => 'post-body',
+    $body .= parent_field($v, $origSlug)
+        . textarea_field('body', 'Page content', (string) $v['body'], ['rows' => 28, 'code' => true, 'class' => 'field-wide', 'id' => 'post-body',
             'hint' => 'Choose an editor above: HTML (the page as written), Blocks (each paragraph and heading is its own form field, best with a screen reader) or Visual. '
                 . 'In HTML, use <code>&lt;h2&gt;</code> for section headings. '
                 . 'Button links: <code>&lt;a class="button" href="…"&gt;</code>. Contact form: <code>[contact-form]</code>.'])
@@ -428,6 +431,7 @@ function page_save(): never
         'add_to_menu' => !empty($_POST['add_to_menu']),
         'translation' => (string) ($_POST['translation'] ?? ''),
         'publish_at' => (string) ($_POST['publish_at'] ?? ''),
+        'parent' => (string) ($_POST['parent'] ?? ''),
     ];
     if ($v['translation'] !== '' && (!valid_slug($v['translation']) || !get_item('pages', $v['translation']))) {
         $v['translation'] = '';
@@ -463,24 +467,21 @@ function page_save(): never
     if ($v['translation'] === '') {
         unset($v['translation']);
     }
+    // The parent page (lib/features/nested-pages.php): only one that is allowed is kept.
+    $v['parent'] = clean_parent($v['slug'], $v['parent'], $existing ? $origSlug : null);
+    if ($v['parent'] === '') {
+        unset($v['parent']);
+    }
+    $oldPaths = $existing ? page_tree_paths($origSlug) : [];
     save_item('pages', $v['slug'], $v, $existing ? $origSlug : null);
     link_translation($v['slug'], $v['translation'] ?? '', $existing ? $origSlug : null);
+    // Children follow a renamed page, and menu links follow every address that changed (the page's or its children's).
+    nested_page_saved($existing ? $origSlug : null, $v['slug'], $oldPaths);
 
     $s = settings();
     $menuKey = slug_lang($v['slug']) === 'es' ? 'menu_es' : 'menu';
     if ($addToMenu) {
         $s[$menuKey][] = ['label' => $v['title'], 'url' => page_path($v['slug'])];
-        save_settings($s);
-    } elseif ($existing && $origSlug !== $v['slug']) {
-        // Keep menu links working when an address changes.
-        foreach (['menu', 'menu_es'] as $key) {
-            foreach ($s[$key] as &$link) {
-                if ($link['url'] === page_path($origSlug)) {
-                    $link['url'] = page_path($v['slug']);
-                }
-            }
-            unset($link);
-        }
         save_settings($s);
     }
 
@@ -751,9 +752,10 @@ function delete_confirm(): never
     $editAction = ['pages' => 'page', 'posts' => 'post', 'resources' => 'resource', 'videos' => 'videos', 'stories' => 'stories'][$type];
     $body = '<p>Are you sure you want to delete the ' . $noun . ' “' . h($item['title']) . '”? '
         . 'It will disappear from the website straight away. A copy is kept, so you can ask for it to be brought back.</p>'
-        . '<form method="post" action="' . h(admin_url('delete', ['type' => $type, 'slug' => $slug])) . '" class="form-actions">' . csrf_field()
-        . '<button type="submit" class="button button-danger">Yes, delete this ' . $noun . '</button>'
-        . '<a class="button button-secondary" href="' . h(admin_url($editAction, ['slug' => $slug])) . '">No, go back</a></form>';
+        . '<form method="post" action="' . h(admin_url('delete', ['type' => $type, 'slug' => $slug])) . '">' . csrf_field()
+        . ($type === 'pages' ? delete_children_field($slug) : '')
+        . '<div class="form-actions"><button type="submit" class="button button-danger">Yes, delete this ' . $noun . '</button>'
+        . '<a class="button button-secondary" href="' . h(admin_url($editAction, ['slug' => $slug])) . '">No, go back</a></div></form>';
     admin_screen('Delete ' . $noun . ': ' . h($item['title']), $body, $type);
 }
 
@@ -765,6 +767,12 @@ function item_delete(): never
     if (!$item || ($type === 'pages' && $slug === 'home')) {
         not_found_screen();
     }
+    $gone = [];
+    if ($type === 'pages') {
+        // Pages inside this one move up a level or go too, as chosen on the confirm screen (lib/features/nested-pages.php).
+        $gone = nested_before_delete($slug, (string) ($_POST['children'] ?? 'up'));
+        $gone[] = page_path($slug);
+    }
     delete_item($type, $slug);
     if ($type === 'pages') {
         // Take the page out of both menus.
@@ -772,7 +780,7 @@ function item_delete(): never
         $changed = false;
         foreach (['menu', 'menu_es'] as $key) {
             $before = count($s[$key]);
-            $s[$key] = array_values(array_filter($s[$key], fn($l) => ($l['url'] ?? '') !== page_path($slug)));
+            $s[$key] = array_values(array_filter($s[$key], fn($l) => !in_array($l['url'] ?? '', $gone, true)));
             $changed = $changed || count($s[$key]) !== $before;
         }
         if ($changed) {
@@ -1104,7 +1112,7 @@ function menu_form(array $errors = [], ?array $menu = null): never
         . '<div class="field"><label for="add-page">Link to one of your pages</label><select id="add-page" name="add_page">' . $options . '</select></div>'
         . '<p>Or link to any address:</p>'
         . text_field('add_label', 'Link text', '', ['error' => $errors['add_label'] ?? null])
-        . text_field('add_url', 'Link address', '', ['spellcheck' => 'false', 'hint' => 'For example <code>/contact-us/</code> or <code>https://example.com/page/</code>', 'error' => $errors['add_url'] ?? null])
+        . text_field('add_url', 'Link address', '', ['spellcheck' => 'false', 'hint' => 'For example <code>/contact-us/</code>, <code>/services/reiki/</code> for a page inside another page, or <code>https://example.com/page/</code>', 'error' => $errors['add_url'] ?? null])
         . '<button type="submit" class="button" name="move" value="add">Add to menu</button></form>';
     $switch = '<nav aria-label="Which menu"><ul class="period-list">'
         . '<li><a href="' . h(admin_url('menu')) . '"' . ($lang === 'en' ? ' aria-current="page"' : '') . '>English menu</a></li>'

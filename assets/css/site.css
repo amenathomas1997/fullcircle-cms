@@ -442,3 +442,11 @@ details > :not(summary):first-of-type { margin-top: 1rem; }
 
 @media (forced-colors: active) { .feature-list li, .cta { border: 2px solid CanvasText; } }
 @media print { .cta { background: none; border: 1px solid #000; } }
+
+/* "You are here" trail on pages inside other pages (lib/features/nested-pages.php). */
+.breadcrumbs { list-style: none; margin: 0 0 1rem; padding: 0; display: flex; flex-wrap: wrap; gap: .25rem 0; font-size: .95rem; color: var(--muted); }
+.breadcrumbs li { margin: 0; display: inline; }
+.breadcrumbs li + li::before { content: "\203A"; padding: 0 .5rem; color: var(--muted); }
+.breadcrumbs a { color: var(--purple-dark); }
+.breadcrumbs a[aria-current="page"] { color: var(--text); text-decoration: none; font-weight: 600; }
+@media (forced-colors: active) { .breadcrumbs li + li::before { color: CanvasText; } }
