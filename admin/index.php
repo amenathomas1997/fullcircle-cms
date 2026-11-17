@@ -1324,7 +1324,7 @@ function settings_form(array $errors = [], array $values = []): never
         ? 'A password is saved. Leave this empty to keep it, or type a new one to replace it.'
         : 'For Gmail and Outlook.com this is an app password, not the password you sign in with.';
 
-    $body = '<nav aria-label="On this screen"><ul><li><a href="#site-heading">Site details</a></li><li><a href="#features">Features</a></li><li><a href="#email-settings">Email sending</a></li><li><a href="#assistant-heading">Ask a question assistant</a></li><li><a href="#bookings-heading">Next opening on Book Services</a></li><li><a href="#people-heading">Microsoft 365 sign-in</a></li><li><a href="#password-heading">Your password and people</a></li></ul></nav>'
+    $body = ''
 
         . '<section aria-labelledby="site-heading"><h2 id="site-heading">Site details</h2>'
         . '<form method="post" action="' . h(admin_url('settings')) . '">' . csrf_field() . '<input type="hidden" name="part" value="site">'
@@ -1392,7 +1392,10 @@ function settings_form(array $errors = [], array $values = []): never
         . '<section aria-labelledby="password-heading"><h2 id="password-heading">Your password and people</h2>'
         . '<p>Change your own password or turn on two-factor sign-in under <a href="' . h(admin_url('account')) . '">My account</a>. '
         . 'Add people, change their roles or reset their passwords on the <a href="' . h(admin_url('people')) . '">People</a> screen, and see what everyone has done under <a href="' . h(admin_url('activity')) . '">Activity</a>.</p></section>';
-    admin_screen('Settings', $body, 'settings', ['errors' => $errors]);
+    // "On this screen" links, made from the section headings that are actually there (features add their own).
+    preg_match_all('#<h2 id="([a-z0-9-]+-heading)">(.*?)</h2>#', $body, $heads, PREG_SET_ORDER);
+    $nav = '<nav aria-label="On this screen"><ul>' . implode('', array_map(fn($h) => '<li><a href="#' . $h[1] . '">' . strip_tags($h[2]) . '</a></li>', $heads)) . '</ul></nav>';
+    admin_screen('Settings', $nav . $body, 'settings', ['errors' => $errors]);
 }
 
 function settings_save(): never

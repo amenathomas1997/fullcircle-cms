@@ -314,13 +314,39 @@ function admin_screen(string $title, string $body, string $section = '', array $
 
     $nav = '';
     if (signed_in()) {
-        $items = '';
-        foreach (admin_nav() as $key => $label) {
-            $current = $key === $section ? ' aria-current="page"' : '';
-            $items .= '<li><a href="' . h(admin_url($key === 'dashboard' ? '' : $key)) . "\"$current>" . h($label) . '</a></li>';
+        // The menu is long, so it is read as a few named groups rather than one list of thirty links.
+        $groups = [
+            'Content' => ['dashboard', 'pages', 'posts', 'resources', 'media', 'menu', 'footer', 'events', 'forms', 'products', 'testimonials', 'videos', 'stories'],
+            'People and messages' => ['messages', 'updates', 'orders', 'people', 'activity', 'account'],
+            'Checks and tools' => ['visitors', 'links', 'a11y', 'redirects', 'import', 'translations', 'system', 'sites', 'backups'],
+            'Site' => ['template', 'settings'],
+        ];
+        $all = admin_nav();
+        $placed = [];
+        $nav = '<nav class="admin-nav" aria-label="Control panel">';
+        foreach ($groups as $title => $keys) {
+            // Anything a feature added that isn't listed above goes under Content.
+            if ($title === 'Content') {
+                $keys = array_merge($keys, array_diff(array_keys($all), array_merge(...array_values($groups))));
+            }
+            $items = '';
+            foreach ($keys as $key) {
+                if (!isset($all[$key]) || isset($placed[$key])) {
+                    continue;
+                }
+                $placed[$key] = true;
+                $current = $key === $section ? ' aria-current="page"' : '';
+                $items .= '<li><a href="' . h(admin_url($key === 'dashboard' ? '' : $key)) . "\"$current>" . h($all[$key]) . '</a></li>';
+            }
+            if ($title === 'Site') {
+                $items .= '<li><a href="/">View website</a></li>';
+            }
+            if ($items !== '') {
+                $id = 'nav-' . preg_replace('/[^a-z]+/', '-', strtolower($title));
+                $nav .= '<div class="nav-group"><p class="nav-group-title" id="' . $id . '">' . h($title) . '</p><ul aria-labelledby="' . $id . '">' . $items . '</ul></div>';
+            }
         }
-        $items .= '<li><a href="/">View website</a></li>';
-        $nav = '<nav class="admin-nav" aria-label="Control panel"><ul>' . $items . '</ul></nav>'
+        $nav .= '</nav>'
             . '<form class="signout" method="post" action="' . h(admin_url('logout')) . '">' . csrf_field()
             . '<button type="submit" class="button-link">Sign out</button></form>';
     }
