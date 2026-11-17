@@ -17,7 +17,7 @@ chmod 700 "$DEST"
 [ "$DEST" = "$HOME/site-backups/content" ] && chmod 700 "$HOME/site-backups"
 FILE="$DEST/site-content-$(date +%Y-%m-%d).tgz"
 # Secrets stay out: data/config.php holds the password hash and API keys (reset with tools/set-password.php).
-tar czf "$FILE.tmp" -C "$SITE" --exclude='data/cache' --exclude='data/graph-token.php' --exclude='data/stats/salt-*' \
+tar czf "$FILE.tmp" -C "$SITE" --exclude='data/cache' --exclude='data/graph-token.php' --exclude='data/deploy-key' --exclude='data/deploy-key.pub' --exclude='data/deploy-known-hosts' --exclude='data/stats/salt-*' \
   --exclude='data/config.php' --exclude='data/login-attempts.json' --exclude='data/outbox/.lock' \
   content data uploads assets/css/site.css
 mv "$FILE.tmp" "$FILE"

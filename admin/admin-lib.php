@@ -334,7 +334,7 @@ function admin_screen(string $title, string $body, string $section = '', array $
         $groups = [
             'Content' => ['dashboard', 'pages', 'posts', 'resources', 'media', 'menu', 'footer', 'events', 'forms', 'products', 'testimonials', 'videos', 'stories'],
             'People and messages' => ['messages', 'updates', 'orders', 'people', 'activity', 'account'],
-            'Checks and tools' => ['visitors', 'links', 'a11y', 'redirects', 'import', 'translations', 'system', 'sites', 'backups'],
+            'Checks and tools' => ['visitors', 'links', 'a11y', 'redirects', 'import', 'translations', 'system', 'sites', 'deploy', 'backups'],
             'Site' => ['template', 'settings'],
         ];
         $all = admin_nav();

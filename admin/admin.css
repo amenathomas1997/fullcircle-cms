@@ -191,3 +191,11 @@ table.stats td:last-child { width: 40%; }
 /* Translations screen: the text boxes fill their column. */
 table.translations textarea { width: 100%; min-width: 16rem; box-sizing: border-box; }
 table.translations th[scope="row"] { font-weight: normal; }
+
+/* Deploy screen */
+.deploy-steps > li { margin-bottom: 1.25rem; }
+.deploy-steps h3 { margin: 0 0 .35rem; font-size: 1.1rem; }
+.deploy-state { font-weight: normal; }
+dl.meta { display: grid; grid-template-columns: max-content 1fr; gap: .35rem 1.25rem; margin: 0 0 1.5rem; }
+dl.meta dt { font-weight: 600; }
+dl.meta dd { margin: 0; overflow-wrap: anywhere; }

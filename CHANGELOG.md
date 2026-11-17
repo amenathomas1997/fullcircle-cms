@@ -2,6 +2,13 @@
 
 Every release of the kit is listed here, newest first. `php tools/update.php` prints the entries that are new since the version a site has installed.
 
+## 1.3.0 — 2026-11-16
+
+### Deploy screen
+
+- A **Deploy new sites** feature (off by default; owner only). Given a cPanel account's sign-in, the domain, the site's details and the owner's name and email, the Deploy screen builds a new site from here: it signs in with the cPanel API, finds the web folder and fixes the domain's PHP version, puts this site's SSH key on the account (password over SSH or API token through the API), checks PHP and git, clones the kit, runs the set-up, adds the cron jobs, makes a fleet key and lists the new site on the Sites screen, and sends the owner a set-password link. Every step is reported in plain words and a stopped deployment can be carried on from that step. Passwords and tokens are never stored.
+- Payments: a fix for PHP 8.1, which refuses an arrow function declared as never returning.
+
 ## 1.2.0 — 2026-11-16
 
 ### Pages

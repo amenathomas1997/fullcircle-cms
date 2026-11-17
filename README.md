@@ -12,7 +12,7 @@ Always on:
 - Named accounts with three roles (owner, editor, author), optional two-factor sign-in, "Forgot your password?" by email, a People screen and an Activity log.
 - A contact form (`[contact-form]`) that saves every message in the control panel and emails it to you.
 - Images and files (JPEG, PNG, GIF, WebP, PDF, Word) with alt-text suggestions from Claude when an API key is set, a menu editor, a Footer screen, a site template editor (layout, stylesheet), redirects with a log of missing addresses, private visitor counts with no cookies, a monthly link check with a daily health check, nightly backups with restore, export and import, and a one-click backup download.
-- Operations for people who host several sites: a VERSION file, `tools/update.php`, migrations, a System screen with an update check, a signed `/status.json` and a Sites screen.
+- Operations for people who host several sites: a VERSION file, `tools/update.php`, migrations, a System screen with an update check, a signed `/status.json`, a Sites screen, and a Deploy screen that builds a new site on any cPanel account.
 - Display options for visitors: text size and light, dark or high-contrast colors, remembered in their browser.
 
 Optional, each with a switch in Settings, then Features:
@@ -281,6 +281,21 @@ php tools/update.php --apply   # git pull --ff-only, composer install --no-dev i
 
 The daily cron job does `git fetch` and compares, storing the answer in `data/update-status.json`. The **System** screen (owner) shows the version, PHP version, disk use, git branch, PHP errors logged today, where the backups are, and "Up to date", "Version X.Y.Z is available: ask your host to update" or "Not a git checkout", with a "Check now" button; the Dashboard gets a card when an update is waiting. The check needs git on the server, `proc_open` enabled, and a remote that works without a password (a public https address, or a deploy key for a private repository). It never prompts.
 
+## Deploying a new site from the Deploy screen
+
+For the person who hosts several sites. Turn on **Deploy new sites** under Settings, Features, and a **Deploy** screen (owner only) appears under Checks and tools. Give it the cPanel account that will hold the new site and the site's details, and it does the set-up from here:
+
+1. Signs in with the cPanel API (`https://host:2083`), finds the account's home folder and the web folder that serves the domain (the main domain, or one added under Domains), and reads the PHP version the domain runs; if it is older than 8.1, the newest installed 8.x is chosen in MultiPHP Manager.
+2. Puts this site's own SSH key on the account: with the cPanel password over SSH (through `sshpass`), or with an API token through the cPanel API's SSH functions. Everything after this uses the key. The password or token is used in that one request and never written anywhere.
+3. Over SSH: the command-line PHP (8.1 or newer, preferring `/opt/cpanel/ea-php8x`), git, and whether the web folder is empty apart from cPanel's own `cgi-bin` and `.well-known`. An old website in the folder stops the deployment unless "Move anything already in the web folder aside" is ticked, which moves it to `~/before-fullcircle-<date>`.
+4. Turns the web folder into a clone of the kit repository (`git init`, `fetch`, `checkout`), so `tools/update.php` works later. The address comes from the form, with `kit_repo` in `data/config.php` as the default.
+5. Runs `tools/setup.php --yes` with the details given. The owner account gets a random password nobody sees.
+6. Adds the three cron lines, writing their output to `~/site-backups/*.log`.
+7. Makes a fleet key on the new site and lists it on this site's Sites screen; makes a one-hour set-password link for the owner, shown on the screen and emailed from this site if asked. "Send the owner a new link by email" makes another any time.
+8. Opens the new site's home page and sign-in screen (a missing certificate is reported, not treated as a failure: AutoSSL follows within an hour).
+
+Each deployment is a record in `data/deploys/<id>.json` with every step's lines; a deployment that stops can be carried on from that step after the cause is fixed. The key pair is `data/deploy-key` (mode 600). This server needs `ssh`, `ssh-keygen`, `git` and, for the password route, `sshpass`; the account on the other end needs shell access (jailed is fine) and git. The screen does not create cPanel accounts; make the account or the domain in cPanel or WHM first.
+
 ## Fleet status: /status.json and the Sites screen
 
 Each site can answer `/status.json` with its version, site name, PHP version, last backup time, unsent contact messages, link-check problems, days left on its SSL certificate, whether an update is pending, and a timestamp. The address exists only when `fleet_secret` is set in `data/config.php` (made on the **Sites** screen with "Make a key for this site"), and only for a signed request:
@@ -357,7 +372,7 @@ Every public page has a skip link to `main`, landmark regions (header, navigatio
 10. Invite the client's people on the People screen with the right roles, and walk the owner through My account and two-factor sign-in.
 11. Fill in the Footer screen, the home page blocks, the About and Contact pages, and any pages the shortcodes need (Updates, Testimonials, forms, events, products). If the client has an old website, bring it in from the Import screen (WordPress export, zip of HTML, or the live address) and add the redirects the report offers.
 12. Check the Dashboard for warnings, the Accessibility screen for warnings, and the Link check screen after the first run.
-13. If you run several sites: on each site, "Make a key for this site" under Sites, and list the others on your own site's Sites screen.
+13. If you run several sites: on each site, "Make a key for this site" under Sites, and list the others on your own site's Sites screen. The Deploy screen on your own site does steps 1 to 5 and this one in a single form.
 14. Write the host's name and contact details at the end of OWNER-GUIDE.md and hand it over.
 
 Later, `php tools/update.php` on each site shows what a kit update brings and `--apply` installs it.
