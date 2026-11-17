@@ -231,7 +231,8 @@ function visitors_screen(): never
 
 function latest_backup(): ?array
 {
-    $files = glob(SITE_BACKUP_DIR . '/site-content-*.tgz') ?: [];
+    // The folder comes from the backup_dir setting in data/config.php when there is one (see lib/features/ops.php).
+    $files = glob((function_exists('backup_dir') ? backup_dir() : SITE_BACKUP_DIR) . '/site-content-*.tgz') ?: [];
     if (!$files) {
         return null;
     }
