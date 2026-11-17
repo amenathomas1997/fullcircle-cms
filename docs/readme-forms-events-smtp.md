@@ -1,0 +1,35 @@
+## SMTP sending
+
+A third email method, `smtp`, sits beside PHP mail and Microsoft Graph in `lib/mail.php`. It is a small SMTP client written with PHP stream sockets (no Composer package): EHLO, STARTTLS, AUTH PLAIN or AUTH LOGIN, MAIL FROM, RCPT TO, DATA with dot-stuffing, QUIT, with a 20-second timeout on connecting and on every reply. Every failure throws a `RuntimeException` that names the step ("while signing in to the email account: 535 ...") so the owner sees it in the Settings message.
+
+Config keys in `data/config.php`: `mail_method` = `smtp`, `smtp_host`, `smtp_port` (587 by default; 465 opens an implicit TLS connection, anything else starts plain and upgrades with STARTTLS when the server offers it), `smtp_user`, `smtp_password` (never echoed back to the browser; an empty Password field on save keeps the stored one), and `smtp_from` (empty means the user name). `mail_from()`, `mail_ready()` and `mail_configured()` understand the new method, so every feature that calls `send_mail_to()` or `send_mail_owner()` works unchanged.
+
+Certificates are verified (`verify_peer`, `verify_peer_name`, SNI). A password is never sent over a plain connection: if the server offers no STARTTLS and a user name is set, sending stops with a message that says so. The only exception is a server on `localhost` / `127.0.0.1`, for local relays and testing.
+
+Common settings: Gmail `smtp.gmail.com` 587 with an app password (2-Step Verification must be on); Outlook.com `smtp-mail.outlook.com` 587 with an app password; cPanel mailboxes `mail.<domain>` 465 or 587 with the mailbox password. Microsoft 365 work and school accounts usually have SMTP AUTH turned off by the organization; use the Microsoft Graph method for those.
+
+Testing without a real server: a fake SMTP server on 127.0.0.1 (plain, no TLS) is enough to exercise the whole exchange; the client accepts a missing STARTTLS offer on 127.0.0.1. The STARTTLS and AUTH LOGIN paths follow the same code; the fake server used while building advertised `AUTH PLAIN LOGIN`, then `AUTH LOGIN` only, then refused the password and the recipient, and each produced the expected message.
+
+## Forms (`lib/features/forms.php`)
+
+Feature switch `forms`, on by default. Forms are items of type `forms` in `content/forms/<name>.json` (`ITEM_TYPES` in `lib/core.php` gained `forms` and `events`; `revision_dir()` accepts both, so `save_item()` keeps revisions as it does for pages). A form holds `title`, `success`, `recipients` and an ordered `fields` list; each field has `label`, `type`, `required`, `hint` and `options` (one per line, for choice lists and checkboxes). Types: `text`, `textarea`, `email`, `tel`, `number`, `date`, `select`, `checkboxes`, `checkbox`, `heading`, `paragraph`.
+
+At load time the feature registers one shortcode per saved form, `[form <name>]`. Rendering follows `lib/contact.php` exactly: labels, hints, the required note, an error summary that links to each field, `aria-describedby`/`aria-invalid`, the honeypot, `contact_form_token()` and a rate limit of 5 an hour through `rate_limited()`. Field ids are `form-<name>-<index>` (checkbox groups add `-<n>`), so two different forms can share a page.
+
+Submissions are written first, as `data/forms/<name>/<Y-m-d_His>-<hex>.json` with `received`, `page`, `language`, `read`, `emailed`, `error` and `answers` (label, type, value), then emailed through `send_mail_to()` (the form's own recipients) or `send_mail_owner()` (none set). The first email field becomes the Reply-To; the first short-text field whose label contains "name" becomes the reply name and goes into the subject.
+
+Control panel screen `?a=forms`: list, editor (`&new=1`, `&slug=`), Submissions (`&view=`), CSV download (`&csv=`), delete confirmations (`&delete=`). The field list is edited like the Menu screen: Add, Move up, Move down and Remove are submit buttons that re-render the editor with a status message focused by `admin.js`; nothing is saved until "Save form". The CSV is UTF-8 with a byte order mark, CRLF line ends, one column per field label (current fields first, then labels only found in older submissions), and cells starting with `=`, `+`, `-` or `@` get a leading apostrophe so spreadsheets never run them as formulas. "Mark all as read" is a POST; the Dashboard card counts unread answers. Deleting a form keeps its submissions folder.
+
+The "Earlier versions" screen (`?a=revisions`) only knows the original item types; revisions of forms and events are saved on disk under `content/revisions/forms/` and `content/revisions/events/` but there is no screen for them until `revision_key()` and `revision_label()` in `admin/index.php` learn the two new types.
+
+## Events (`lib/features/events.php`)
+
+Feature switch `events`, off by default. Items of type `events` in `content/events/<slug>.json`: `title`, `slug`, `start_date`, `start_time`, `end_date`, `end_time`, `all_day`, `location`, `online_url`, `body` (HTML, edited with `editor_scripts()`), `status`, `repeat` (`none`, `weekly`, `monthly`) and `repeat_until`. Occurrences are generated on request by `event_occurrences()`: at most 52 per event, monthly repeats skip months without that date, and an end is carried along as a whole-day offset so the wall-clock time survives daylight-saving changes.
+
+Routes (registered through `register_route()`): `/events/`, `/events/<slug>/`, `/events/<slug>.ics`, `/events/feed.ics`. The list groups upcoming occurrences by month under `<h3>` headings and puts past ones inside `<details><summary>Past events</summary>`. An occurrence counts as upcoming until its end, or until the end of its day when it has no end.
+
+The Spanish mirror `/es/eventos/` is handled by the same route callback (it switches `current_lang('es')`), but `index.php` currently answers every `/es/...` address itself (the `if ($first === 'es')` block runs `show_page()` and `not_found()` before `run_registered_routes()`), so the address 404s until that block lets registered routes go first. The handler is tested by calling `run_registered_routes('/es/eventos/', ['es', 'eventos'])` directly. Meanwhile a Spanish page can carry `[events-list]`, which renders the whole list in the page's language.
+
+iCalendar output: one `VEVENT` per occurrence (UID `<slug>-<local start>@<host>`), `DTSTART`/`DTEND` in UTC (`...Z`) for timed events and `VALUE=DATE` with an exclusive end date for all-day ones, `SUMMARY`, `DESCRIPTION` (plain text of the body), `LOCATION` (place plus online link), `URL`, text escaping per RFC 5545, CRLF line ends, and folding at 75 octets without splitting a UTF-8 character. Served as `text/calendar` with a download filename.
+
+Shortcodes: `[upcoming-events]` (next five, link to all) and `[events-list]` (the full list). Control panel screen `?a=events`: list sorted by next date, form, delete confirmation. Public strings and the English and Spanish weekday and month names are in `lib/i18n.php` (`weekday_0`..`weekday_6`, `month_1`..`month_12`, `events`, `upcoming_events`, `past_events`, `add_to_calendar` and the `form_*` keys).
