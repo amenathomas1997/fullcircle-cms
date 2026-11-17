@@ -324,9 +324,9 @@ function admin_screen(string $title, string $body, string $section = '', array $
         $all = admin_nav();
         $placed = [];
         $nav = '<nav class="admin-nav" aria-label="Control panel">';
-        foreach ($groups as $title => $keys) {
+        foreach ($groups as $groupTitle => $keys) {
             // Anything a feature added that isn't listed above goes under Content.
-            if ($title === 'Content') {
+            if ($groupTitle === 'Content') {
                 $keys = array_merge($keys, array_diff(array_keys($all), array_merge(...array_values($groups))));
             }
             $items = '';
@@ -338,12 +338,12 @@ function admin_screen(string $title, string $body, string $section = '', array $
                 $current = $key === $section ? ' aria-current="page"' : '';
                 $items .= '<li><a href="' . h(admin_url($key === 'dashboard' ? '' : $key)) . "\"$current>" . h($all[$key]) . '</a></li>';
             }
-            if ($title === 'Site') {
+            if ($groupTitle === 'Site') {
                 $items .= '<li><a href="/">View website</a></li>';
             }
             if ($items !== '') {
-                $id = 'nav-' . preg_replace('/[^a-z]+/', '-', strtolower($title));
-                $nav .= '<div class="nav-group"><p class="nav-group-title" id="' . $id . '">' . h($title) . '</p><ul aria-labelledby="' . $id . '">' . $items . '</ul></div>';
+                $id = 'nav-' . preg_replace('/[^a-z]+/', '-', strtolower($groupTitle));
+                $nav .= '<div class="nav-group"><p class="nav-group-title" id="' . $id . '">' . h($groupTitle) . '</p><ul aria-labelledby="' . $id . '">' . $items . '</ul></div>';
             }
         }
         $nav .= '</nav>'
