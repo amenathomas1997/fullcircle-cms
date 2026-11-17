@@ -307,7 +307,9 @@ function deploy_cpanel(array $server, string $credType, string $credential, stri
         throw new DeployFailed('Could not reach cPanel at ' . $server['api'] . ': ' . $curlErr);
     }
     if ($code === 401 || $code === 403) {
-        throw new DeployFailed($credType === 'token' ? 'cPanel did not accept the API token for that user name.' : 'cPanel did not accept that user name and password.');
+        throw new DeployFailed($credType === 'token'
+            ? 'cPanel did not accept the API token for that user name. Check that the token was made in that account’s cPanel (Security, Manage API Tokens) and that the user name is the cPanel user name, not an email address.'
+            : 'cPanel did not accept that user name and password. If two-factor authentication is turned on for that cPanel account, cPanel refuses passwords for API calls: sign in to cPanel as that user, open Security, Manage API Tokens, create a token, then choose “A cPanel API token” here and paste it. Otherwise check that the user name is the cPanel user name (not an email address) and that the password is the account’s own password, not the WHM or reseller one.');
     }
     $data = json_decode((string) $body, true);
     if (!is_array($data)) {
