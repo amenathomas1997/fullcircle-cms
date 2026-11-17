@@ -19,12 +19,12 @@ const DATA_DIR = ROOT . '/data';
 const UPLOAD_DIR = ROOT . '/uploads';
 const STYLESHEET = ROOT . '/assets/css/site.css';
 const MAX_REVISIONS = 25;
-const ITEM_TYPES = ['pages', 'posts', 'resources', 'videos', 'stories', 'products'];
+const ITEM_TYPES = ['pages', 'posts', 'resources', 'videos', 'stories', 'products', 'events', 'forms'];
 
 require_once __DIR__ . '/i18n.php';
 
 // Addresses the site uses itself, so pages can't take them.
-const RESERVED_SLUGS = ['admin', 'assets', 'blog', 'content', 'data', 'feed', 'index', 'index-php', 'lib', 'resources', 'search', 'sitemap', 'stories', 'success-stories', 'tools', 'uploads', 'videos'];
+const RESERVED_SLUGS = ['admin', 'assets', 'blog', 'content', 'data', 'events', 'feed', 'index', 'index-php', 'lib', 'pay', 'resources', 'review', 'search', 'site', 'sitemap', 'status', 'stories', 'success-stories', 'tools', 'uploads', 'updates', 'videos'];
 
 // Dates and times use the time zone chosen in Settings.
 date_default_timezone_set(in_array(settings()['timezone'], DateTimeZone::listIdentifiers(), true) ? settings()['timezone'] : 'UTC');

@@ -167,6 +167,8 @@ if ($first === 'resources') {
 }
 if ($first === 'es') {
     current_lang('es');
+    // Features with Spanish addresses (for example /es/eventos/) answer before the plain Spanish pages.
+    run_registered_routes($path, $parts);
     if (count($parts) === 1) {
         show_page('es', '/es/');
     }

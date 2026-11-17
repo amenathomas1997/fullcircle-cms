@@ -23,6 +23,11 @@ function config(bool $reload = false): array
             'mail_method' => 'php',
             'mail_from' => '',
             'mail_from_name' => '',
+            'smtp_host' => '',
+            'smtp_port' => 587,
+            'smtp_user' => '',
+            'smtp_password' => '',
+            'smtp_from' => '',
             'contact_recipients' => '',
             'contact_subject' => 'New message from the website',
         ];
