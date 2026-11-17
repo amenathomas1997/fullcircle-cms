@@ -128,6 +128,6 @@ create_starter_content($spanish);
 echo "\nDone. $name is set up with ", count(all_items('pages')), " pages and one blog post.\n";
 echo "Next:\n";
 echo "  1. Sign in at $url/admin/ as $ownerEmail and look around Settings. Add other people on the People screen.\n";
-echo "  2. Under Settings > Email sending, choose PHP mail or Microsoft 365 and send yourself a test.\n";
+echo "  2. Under Settings > Email sending, choose PHP mail, an SMTP account or Microsoft 365 and send yourself a test.\n";
 echo "  3. Set up the three cron jobs in README.md: email updates, the link check and the nightly backup.\n";
 echo "To try it on this computer first: php -S localhost:8000 router.php\n";
