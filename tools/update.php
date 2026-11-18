@@ -132,7 +132,7 @@ foreach (pending_migrations() as $file) {
 
 if ($verify && $beforeCommit !== '') {
     echo "Checking the updated site (tools/selftest.php)...\n";
-    passthru(escapeshellarg(PHP_BINARY) . ' ' . escapeshellarg(ROOT . '/tools/selftest.php') . ' 2>&1 | sed "s/^/  /"', $code);
+    passthru(escapeshellarg(PHP_BINARY) . ' ' . escapeshellarg(ROOT . '/tools/selftest.php') . ' 2>&1', $code);
     if ($code !== 0) {
         $nowCommit = trim((string) git_run(['rev-parse', 'HEAD']));
         if ($nowCommit !== $beforeCommit) {
