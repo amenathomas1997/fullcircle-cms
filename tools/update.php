@@ -4,6 +4,10 @@
  *   php tools/update.php           show the installed version and what a newer kit would bring
  *   php tools/update.php --apply   pull the update (git pull --ff-only), refresh Composer packages
  *                                  if vendor/ exists, run any new migrations, and print the changelog
+ *   php tools/update.php --apply --verify
+ *                                  the same, then run tools/selftest.php; if it fails, put the code back
+ *                                  exactly as it was (git reset to the previous commit) and exit with 2.
+ *                                  Finished migrations are not undone; every migration is safe to run twice.
  * The site must be a git checkout whose "origin" is the kit repository (see README: create sites
  * with git clone, not by copying). Migrations are tools/migrations/NNN-name.php; each is run once
  * and noted in data/migrations.json. Every migration must be safe to run twice.
@@ -18,6 +22,7 @@ if (PHP_SAPI !== 'cli') {
 require __DIR__ . '/../lib/bootstrap.php';
 
 $apply = in_array('--apply', $argv, true);
+$verify = in_array('--verify', $argv, true);
 $ref = update_ref();
 [$remote] = explode('/', $ref, 2) + [''];
 $before = cms_version();
@@ -59,13 +64,14 @@ if (!$apply) {
     exit(0);
 }
 
+$beforeCommit = trim((string) git_run(['rev-parse', 'HEAD']));
+$kept = [];
 if ($log !== '') {
     // The template and stylesheet are tracked by git but edited in the control panel, so the site's own
     // versions are set aside for the pull and put back after it: what the owner wrote always wins.
     $owned = ['content/layout.html', 'assets/css/site.css'];
     // Each porcelain line is two status letters, a space and the path; the leading space matters.
     $dirty = array_filter(explode("\n", rtrim((string) git_run(['status', '--porcelain', '--untracked-files=no']), "\n")), 'strlen');
-    $kept = [];
     foreach ($dirty as $line) {
         $path = substr($line, 3);
         if (in_array($path, $owned, true)) {
@@ -122,6 +128,33 @@ foreach (pending_migrations() as $file) {
         fwrite(STDERR, '  Failed: ' . $e->getMessage() . "\nFix the cause and run php tools/update.php --apply again; finished migrations are not repeated.\n");
         exit(1);
     }
+}
+
+if ($verify && $beforeCommit !== '') {
+    echo "Checking the updated site (tools/selftest.php)...\n";
+    passthru(escapeshellarg(PHP_BINARY) . ' ' . escapeshellarg(ROOT . '/tools/selftest.php') . ' 2>&1 | sed "s/^/  /"', $code);
+    if ($code !== 0) {
+        $nowCommit = trim((string) git_run(['rev-parse', 'HEAD']));
+        if ($nowCommit !== $beforeCommit) {
+            foreach ($kept as $path => $_) {
+                git_run(['checkout', '--', $path]);
+            }
+            $back = git_run(['reset', '--hard', '--quiet', $beforeCommit], 120) !== null;
+            foreach ($kept as $path => $contents) {
+                write_file(ROOT . '/' . $path, $contents);
+            }
+            if (function_exists('opcache_reset')) {
+                @opcache_reset();
+            }
+            fwrite(STDERR, $back
+                ? "The checks failed, so the code was put back to version $before (commit " . substr($beforeCommit, 0, 7) . "). The site is as it was before this update.\n"
+                : "The checks failed and the code could NOT be put back automatically. Run: git reset --hard $beforeCommit\n");
+        } else {
+            fwrite(STDERR, "The checks failed. Nothing was pulled, so there is nothing to put back; the problem is already on this site.\n");
+        }
+        exit(2);
+    }
+    echo "  The updated site passed its checks.\n";
 }
 
 $after = trim((string) @file_get_contents(ROOT . '/VERSION')) ?: $before;

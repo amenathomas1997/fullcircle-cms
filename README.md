@@ -12,7 +12,7 @@ Always on:
 - Named accounts with three roles (owner, editor, author), optional two-factor sign-in, "Forgot your password?" by email, a People screen and an Activity log.
 - A contact form (`[contact-form]`) that saves every message in the control panel and emails it to you.
 - Images and files (JPEG, PNG, GIF, WebP, PDF, Word) with alt-text suggestions from Claude when an API key is set, a menu editor, a Footer screen, a site template editor (layout, stylesheet), redirects with a log of missing addresses, private visitor counts with no cookies, a monthly link check with a daily health check, nightly backups with restore, export and import, and a one-click backup download.
-- Operations for people who host several sites: a VERSION file, `tools/update.php`, migrations, a System screen with an update check, a signed `/status.json`, a Sites screen, and a Deploy screen that builds a new site on any cPanel account.
+- Operations for people who host several sites: a VERSION file, `tools/update.php` (with `--verify`, which rolls back an update that fails its checks), migrations, a System screen with an update check, a signed `/status.json`, a Sites screen with email alerts when a site is down or needs attention, a Deploy screen that builds a new site on any cPanel account, and `tools/selftest.php` for CI.
 - Display options for visitors: text size and light, dark or high-contrast colors, remembered in their browser.
 
 Optional, each with a switch in Settings, then Features:
@@ -345,6 +345,21 @@ Each site can answer `/status.json` with its version, site name, PHP version, la
 `t` must be within 5 minutes of the server's clock; anything else is a plain 404.
 
 The Sites screen (owner) lists the other sites under `fleet_sites` in `data/config.php` (name, url, key). "Check all" fetches every status with curl and a 10-second timeout, saves the answers in `data/fleet-status.json`, and shows a plain-words summary per site. Things it flags: unsent messages, link problems, a certificate with under 14 days left, no backup or one older than two days, and a pending kit update. The Dashboard shows "3 of 4 sites are fine". A site cannot check itself through the `php -S` preview server unless it was started with `PHP_CLI_SERVER_WORKERS=2` or more.
+
+## Alerts by email
+
+The site that lists the others on its Sites screen also watches them. Every 10 minutes (the email updates cron job) it asks each listed site, and itself, for its status, and emails the owner (the contact recipients under Settings) when:
+
+- a site has not answered for two checks in a row, about 20 minutes, and again when it is back;
+- a site's SSL certificate has under 14 days left;
+- a site has no backup from the last two nights;
+- a site has contact messages it could not email.
+
+Down and back are always sent; the other concerns at most once a day per site, and several found in one check go in one email. The switch and a "Send me a test alert" button are on the Sites screen under Alerts by email. State is kept in `data/fleet-alerts.json`.
+
+## Updating with a safety net
+
+`php tools/update.php --apply --verify` pulls the update, runs the migrations, then runs `tools/selftest.php` on the updated site. If the checks fail, the code is put back exactly as it was (`git reset --hard` to the previous commit, with the site's own template and stylesheet kept) and the command exits with code 2, so a pipeline can tell the difference between "nothing to do", "updated" and "rolled back". Finished migrations are not undone; every migration is written to be safe to run twice. The first update from a kit older than 1.5.0 runs without the check, because it is the old update tool that runs.
 
 ## Deploying code changes by rsync
 

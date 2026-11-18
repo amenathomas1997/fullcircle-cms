@@ -238,6 +238,8 @@ function ops_sites_screen(bool $post): never
     if ($post) {
         match ($do) {
             'check' => ops_sites_check(),
+            'alerts' => ops_sites_alerts_save(),
+            'test-alert' => ops_sites_test_alert(),
             'add' => ops_sites_add(),
             'remove' => ops_sites_remove(),
             'secret' => ops_sites_new_secret(),
@@ -290,6 +292,19 @@ function ops_sites_list(array $errors = [], array $v = []): never
         }
         $body .= '</tbody></table></div>';
     }
+
+    $alerts = read_json(FLEET_ALERTS) ?? [];
+    $body .= '<h2 id="alerts">Alerts by email</h2>'
+        . '<p>Every 10 minutes this site asks each site above, and itself, how it is doing. You are emailed at ' . h((string) (config()['contact_recipients'] ?? '')) . ' when a site has not answered for two checks in a row (and again when it is back), '
+        . 'when a certificate has under 14 days left, when there is no backup from the last two nights, or when a site has contact messages it could not email. Apart from down and back, each concern is sent at most once a day per site.</p>'
+        . (!mail_configured() ? '<p><strong>Email sending is not set up</strong> (Settings, Email sending), so no alerts can go out yet.</p>' : '')
+        . '<p>' . (!empty($alerts['last_run']) ? 'Last check ' . h(format_time((int) $alerts['last_run'])) . '. ' : 'No check has run yet (the email updates cron job runs it). ')
+        . (!empty($alerts['last_sent']) ? 'Last alert sent ' . h(format_time((string) $alerts['last_sent'])) . '.' : 'No alert has been sent yet.') . '</p>'
+        . '<form method="post" action="' . h(admin_url('sites', ['do' => 'alerts'])) . '">' . csrf_field()
+        . checkbox_field('fleet_alerts', 'Send alerts by email', fleet_alerts_on())
+        . '<div class="form-actions"><button type="submit" class="button">Save</button></div></form>'
+        . '<form method="post" action="' . h(admin_url('sites', ['do' => 'test-alert'])) . '" class="form-actions">' . csrf_field()
+        . '<button type="submit" class="button button-secondary">Send me a test alert</button></form>';
 
     $body .= '<h2 id="add-site">Add a site</h2>'
         . '<form method="post" action="' . h(admin_url('sites', ['do' => 'add'])) . '">' . csrf_field()
@@ -662,4 +677,25 @@ function ops_import(): never
     ops_log("Imported the site “{$from}” ($n files, exported " . ($manifest['exported'] ?? 'unknown date') . ' from kit version ' . ($manifest['version'] ?? 'unknown') . ')');
     flash("Imported “{$from}” ($n files). " . ($safety !== '' ? "The site as it was before is saved at $safety. " : '') . 'Check Settings and the home page.');
     go(admin_url('backups'));
+}
+
+function ops_sites_alerts_save(): never
+{
+    $s = settings();
+    $s['fleet_alerts'] = !empty($_POST['fleet_alerts']);
+    save_settings($s);
+    activity_log('changed site alerts', $s['fleet_alerts'] ? 'on' : 'off');
+    flash($s['fleet_alerts'] ? 'Alerts are on.' : 'Alerts are off.');
+    go(admin_url('sites') . '#alerts');
+}
+
+function ops_sites_test_alert(): never
+{
+    try {
+        fleet_alerts_email([['site' => site_name(), 'url' => rtrim(site_url('/'), '/'), 'kind' => 'test', 'text' => 'This is a test alert from ' . site_name() . '; nothing is wrong']]);
+        flash('Sent a test alert to ' . (string) (config()['contact_recipients'] ?? '') . '.');
+    } catch (Throwable $e) {
+        flash('Could not send the test alert: ' . $e->getMessage(), 'error');
+    }
+    go(admin_url('sites') . '#alerts');
 }

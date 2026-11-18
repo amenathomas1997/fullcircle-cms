@@ -2,6 +2,15 @@
 
 Every release of the kit is listed here, newest first. `php tools/update.php` prints the entries that are new since the version a site has installed.
 
+## 1.5.0 — 2026-11-17
+
+### Alerts, safer updates and CI
+
+- **Alerts by email** from the site that watches the others: a site down for two checks in a row (and back again), a certificate under 14 days, no backup for two nights, or contact messages a site could not email. At most once a day per concern, several in one email, with a switch and a test button on the Sites screen.
+- `tools/update.php --apply --verify` runs the self-test after updating and puts the code back if it fails (exit code 2).
+- `tools/selftest.php`: syntax of every file, the bootstrap and registry, the appointment engine, the iCalendar parser, the alert logic, and with `--site` a crawl of a running site and every control panel screen. A GitHub Actions workflow runs it on every push.
+- Fixes: a just-updated site no longer reports its own version as an available update; the Backups screen and the status report look for backups in the account's home folder, like backup.sh, so subdomain sites are not backed up inside the web root; the local router serves the calendar sign-in callback.
+
 ## 1.4.0 — 2026-11-17
 
 ### Appointments

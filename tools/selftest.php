@@ -128,7 +128,23 @@ $out = appt_booking_ics($b);
 $check('booking .ics has UTC times and escaped text', str_contains($out, 'DTSTART:20261124T200000Z') && str_contains($out, 'SUMMARY:Test — A\, B\; C'));
 $check('booking tokens', appt_token_ok('20261124-120000-abcdef', appt_token('20261124-120000-abcdef')) && !appt_token_ok('20261124-120000-abcdef', 'nope'));
 
-/* ---------- 5. A running site, when asked ---------- */
+/* ---------- 5. Fleet alerts decide correctly ---------- */
+$t0 = 1_800_000_000;
+$fine = fn(string $n, array $extra = []) => ['name' => $n, 'url' => "https://$n", 'ok' => true, 'error' => '', 'status' => $extra + ['ssl_days' => 60, 'last_backup' => date('c', $t0 - 3600), 'unsent_messages' => 0, 'timestamp' => date('c', $t0)]];
+$gone = fn(string $n) => ['name' => $n, 'url' => "https://$n", 'ok' => false, 'error' => 'No answer', 'status' => null];
+$st = [];
+[$a1, $st] = fleet_alert_decisions([$fine('a.test'), $fine('b.test')], $st, $t0);
+[$a2, $st] = fleet_alert_decisions([$gone('a.test'), $fine('b.test')], $st, $t0 + 600);
+[$a3, $st] = fleet_alert_decisions([$gone('a.test'), $fine('b.test', ['ssl_days' => 5])], $st, $t0 + 1200);
+[$a4, $st] = fleet_alert_decisions([$gone('a.test'), $fine('b.test', ['ssl_days' => 5])], $st, $t0 + 1800);
+[$a5, $st] = fleet_alert_decisions([$fine('a.test'), $fine('b.test', ['ssl_days' => 5])], $st, $t0 + 2400);
+[$a6, $st] = fleet_alert_decisions([$fine('a.test'), $fine('b.test', ['ssl_days' => 5])], $st, $t0 + 90000);
+$kinds = fn(array $a) => implode(',', array_column($a, 'kind'));
+$check('fleet alerts: down after two misses, no repeats within a day, back, and again a day later',
+    $kinds($a1) === '' && $kinds($a2) === '' && $kinds($a3) === 'down,ssl' && $kinds($a4) === '' && $kinds($a5) === 'back' && $kinds($a6) === 'ssl',
+    implode(' / ', array_map($kinds, [$a1, $a2, $a3, $a4, $a5, $a6])));
+
+/* ---------- 6. A running site, when asked ---------- */
 if (!empty($opts['site'])) {
     $base = rtrim((string) $opts['site'], '/');
     $jar = tempnam(sys_get_temp_dir(), 'selftest-cookies');
