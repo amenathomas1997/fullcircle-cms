@@ -231,7 +231,8 @@ function fleet_signature(int $t, string $secret): string
 /** Everything /status.json reports. */
 function site_status(): array
 {
-    $messages = glob(MESSAGE_DIR . '/*.json') ?: [];
+    // Only recent ones: an old message that was never emailed is in Messages to read, not a standing alarm.
+    $messages = array_filter(glob(MESSAGE_DIR . '/*.json') ?: [], fn($f) => filemtime($f) > time() - 7 * 86400);
     $unsent = count(array_filter($messages, fn($f) => !(read_json($f)['emailed'] ?? false)));
     $backup = backup_archives()[0] ?? null;
     $report = read_json(LINK_REPORT);
