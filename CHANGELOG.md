@@ -2,6 +2,13 @@
 
 Every release of the kit is listed here, newest first. `php tools/update.php` prints the entries that are new since the version a site has installed.
 
+## 1.5.1 — 2026-11-18
+
+### Calendar connections checked end to end
+
+- The self-test now stands in for Microsoft Graph, Google Calendar and a CalDAV server and runs the real request code against them: token renewal, paged busy times, making and removing events, discovery, and the plain-words errors for an expired connection, an unshared calendar and a wrong password.
+- Fixes found that way: the CalDAV calendar list could offer a tasks-only calendar (it now reads which components a calendar holds); a Microsoft or Google access token revoked before its time is renewed once and the call repeated instead of failing.
+
 ## 1.5.0 — 2026-11-17
 
 ### Alerts, safer updates and CI

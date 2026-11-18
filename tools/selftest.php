@@ -128,6 +128,168 @@ $out = appt_booking_ics($b);
 $check('booking .ics has UTC times and escaped text', str_contains($out, 'DTSTART:20261124T200000Z') && str_contains($out, 'SUMMARY:Test — A\, B\; C'));
 $check('booking tokens', appt_token_ok('20261124-120000-abcdef', appt_token('20261124-120000-abcdef')) && !appt_token_ok('20261124-120000-abcdef', 'nope'));
 
+/* ---------- 4b. The three calendar kinds, against a stand-in for each service ----------
+   appt_http() hands every request to $GLOBALS['appt_http_mock'] while it is set, so the code that builds
+   requests, follows paging, reads answers and reports problems runs exactly as it does live, with no network. */
+$log = [];
+$queue = [];
+$GLOBALS['appt_http_mock'] = function (string $method, string $url, array $headers, string $body, ?string $auth) use (&$log, &$queue): array {
+    $log[] = ['method' => $method, 'url' => $url, 'headers' => $headers, 'body' => $body, 'auth' => $auth];
+    foreach ($queue as $i => [$match, $answer]) {
+        if (preg_match($match, $method . ' ' . $url)) {
+            unset($queue[$i]);
+            return $answer;
+        }
+    }
+    return [599, 'no stand-in answer for ' . $method . ' ' . $url, []];
+};
+$json = fn(int $status, array $data, array $headers = []) => [$status, (string) json_encode($data), $headers];
+$try = function (callable $f, string &$why) {
+    try {
+        return $f();
+    } catch (Throwable $e) {
+        $why = $e->getMessage();
+        return null;
+    }
+};
+$win = new DateTimeImmutable('2026-12-01 00:00', $zone);
+$booking = ['id' => '20261203-100000-abc123', 'uid' => '20261203-100000-abc123@example.com', 'start' => '2026-12-03T10:00:00-06:00', 'end' => '2026-12-03T10:45:00-06:00',
+    'service_title' => 'Consultation', 'duration' => 45, 'name' => 'Pat Example', 'email' => 'pat@example.com', 'phone' => '', 'notes' => 'first visit', 'location' => 'Room 2', 'status' => 'booked', 'language' => 'en'];
+
+// Microsoft: a refresh-token renewal, a two-page calendarView, an event made with the visitor invited, then removed.
+$ms = ['type' => 'microsoft', 'tenant' => 'consumers', 'refresh_token' => 'rt-1', 'ms_calendar_id' => 'CAL1'];
+$queue = [
+    ['#^POST https://login\.microsoftonline\.com/consumers/oauth2/v2\.0/token$#', $json(200, ['access_token' => 'at-1', 'refresh_token' => 'rt-1', 'expires_in' => 3599])],
+    ['#^GET https://graph\.microsoft\.com/v1\.0/me/calendars/CAL1/calendarView\?#', $json(200, ['value' => [
+        ['start' => ['dateTime' => '2026-12-02T15:00:00.0000000', 'timeZone' => 'UTC'], 'end' => ['dateTime' => '2026-12-02T16:00:00.0000000', 'timeZone' => 'UTC'], 'showAs' => 'busy'],
+        ['start' => ['dateTime' => '2026-12-02T17:00:00.0000000', 'timeZone' => 'UTC'], 'end' => ['dateTime' => '2026-12-02T18:00:00.0000000', 'timeZone' => 'UTC'], 'showAs' => 'free'],
+        ['start' => ['dateTime' => '2026-12-02T19:00:00.0000000', 'timeZone' => 'UTC'], 'end' => ['dateTime' => '2026-12-02T20:00:00.0000000', 'timeZone' => 'UTC'], 'showAs' => 'busy', 'isCancelled' => true],
+    ], '@odata.nextLink' => 'https://graph.microsoft.com/v1.0/me/calendars/CAL1/calendarView?page2'])],
+    ['#^GET https://graph\.microsoft\.com/v1\.0/me/calendars/CAL1/calendarView\?page2$#', $json(200, ['value' => [
+        ['start' => ['dateTime' => '2026-12-04T09:00:00.0000000', 'timeZone' => 'Central Standard Time'], 'end' => ['dateTime' => '2026-12-04T09:30:00.0000000', 'timeZone' => 'Central Standard Time'], 'showAs' => 'tentative'],
+    ]])],
+    ['#^POST https://graph\.microsoft\.com/v1\.0/me/calendars/CAL1/events$#', $json(201, ['id' => 'EV1', 'webLink' => 'https://outlook.live.com/calendar/item/EV1'])],
+    ['#^DELETE https://graph\.microsoft\.com/v1\.0/me/events/EV1$#', [204, '', []]],
+];
+$log = [];
+$why = '';
+$busy = $try(fn() => appt_ms_busy($ms, $win, $win->modify('+7 days')), $why);
+$got = $busy === null ? [] : array_map(fn($p) => $p[0]->setTimezone(new DateTimeZone('UTC'))->format('m-d H:i') . '-' . $p[1]->setTimezone(new DateTimeZone('UTC'))->format('H:i'), $busy);
+$tokenReq = $log[0] ?? [];
+parse_str((string) ($tokenReq['body'] ?? ''), $tokenFields);
+$check('Microsoft: renews the access token with the refresh token', ($tokenFields['grant_type'] ?? '') === 'refresh_token' && ($tokenFields['refresh_token'] ?? '') === 'rt-1' && isset($tokenFields['client_id'], $tokenFields['client_secret'], $tokenFields['scope']), $why);
+$check('Microsoft: calendarView asks for the window in UTC and sends the bearer token', str_contains((string) ($log[1]['url'] ?? ''), 'startDateTime=2026-12-01T06%3A00%3A00Z') && in_array('Authorization: Bearer at-1', $log[1]['headers'] ?? [], true), (string) ($log[1]['url'] ?? ''));
+$check('Microsoft: busy times follow paging, skip free and cancelled, read Windows zone names', $got === ['12-02 15:00-16:00', '12-04 15:00-15:30'], $why ?: implode(', ', $got));
+$queue = array_values($queue);
+$made = $try(fn() => appt_ms_create($ms, $booking), $why);
+$ev = json_decode((string) ($log[3]['body'] ?? ''), true) ?: [];
+$check('Microsoft: the event is made in the chosen calendar with the visitor invited', ($made['event_id'] ?? '') === 'EV1' && ($ev['start']['dateTime'] ?? '') === '2026-12-03T16:00:00' && ($ev['transactionId'] ?? '') === $booking['id']
+    && ($ev['attendees'][0]['emailAddress']['address'] ?? '') === 'pat@example.com' && ($ev['location']['displayName'] ?? '') === 'Room 2' && ($ev['showAs'] ?? '') === 'busy', $why ?: json_encode($ev));
+$queue = array_values($queue);
+$try(fn() => appt_ms_delete($ms, $made ?? []), $why);
+$check('Microsoft: cancelling removes the event', ($log[4]['method'] ?? '') === 'DELETE' && $why === '', $why);
+$queue = [
+    ['#calendarView#', $json(401, ['error' => ['code' => 'InvalidAuthenticationToken', 'message' => 'Access token has expired.']])],
+    ['#^POST https://login\.microsoftonline\.com/consumers/oauth2/v2\.0/token$#', $json(200, ['access_token' => 'at-2', 'refresh_token' => 'rt-1', 'expires_in' => 3599])],
+    ['#calendarView#', $json(200, ['value' => []])],
+];
+$log = [];
+$why = '';
+$busy = $try(fn() => appt_ms_busy($ms, $win, $win->modify('+1 day')), $why);
+$check('Microsoft: a revoked access token is renewed once and the call repeated', $busy === [] && count($log) === 3 && in_array('Authorization: Bearer at-2', $log[2]['headers'] ?? [], true), $why ?: count($log) . ' requests');
+unset($GLOBALS['appt_mock_tokens']);
+$queue = [['#token#', $json(400, ['error' => 'invalid_grant', 'error_description' => 'AADSTS70000: The refresh token has expired.'])]];
+$why = '';
+$try(fn() => appt_ms_busy($ms, $win, $win->modify('+1 day')), $why);
+$check('Microsoft: an expired connection is reported in plain words', str_contains($why, 'would not renew') && str_contains($why, 'Connect the calendar again'), $why);
+
+unset($GLOBALS['appt_mock_tokens']);
+// Google: a signed JWT for the service account, freeBusy, an event made and removed, and a shared-calendar mistake explained.
+$pair = openssl_pkey_new(['private_key_bits' => 2048, 'private_key_type' => OPENSSL_KEYTYPE_RSA]);
+openssl_pkey_export($pair, $pem);
+$public = openssl_pkey_get_details($pair)['key'];
+$goog = ['type' => 'google', 'service_account' => ['client_email' => 'robot@example.iam.gserviceaccount.com', 'private_key' => $pem], 'google_calendar_id' => 'owner@gmail.com'];
+$queue = [
+    ['#^POST https://oauth2\.googleapis\.com/token$#', $json(200, ['access_token' => 'g-at', 'expires_in' => 3599])],
+    ['#^POST https://www\.googleapis\.com/calendar/v3/freeBusy$#', $json(200, ['calendars' => ['owner@gmail.com' => ['busy' => [['start' => '2026-12-02T15:00:00Z', 'end' => '2026-12-02T16:00:00Z']]]]])],
+    ['#^POST https://www\.googleapis\.com/calendar/v3/calendars/owner%40gmail\.com/events$#', $json(200, ['id' => 'gev1', 'htmlLink' => 'https://calendar.google.com/event?eid=gev1'])],
+    ['#^DELETE https://www\.googleapis\.com/calendar/v3/calendars/owner%40gmail\.com/events/gev1$#', [204, '', []]],
+    ['#^POST https://www\.googleapis\.com/calendar/v3/freeBusy$#', $json(200, ['calendars' => ['owner@gmail.com' => ['errors' => [['domain' => 'global', 'reason' => 'notFound']]]]])],
+];
+$log = [];
+$why = '';
+$busy = $try(fn() => appt_google_busy($goog, $win, $win->modify('+7 days')), $why);
+parse_str((string) ($log[0]['body'] ?? ''), $jwtFields);
+$jwtOk = false;
+if (isset($jwtFields['assertion'])) {
+    [$h, $p, $sig] = array_pad(explode('.', (string) $jwtFields['assertion']), 3, '');
+    $claims = json_decode((string) base64_decode(strtr($p, '-_', '+/')), true) ?: [];
+    $jwtOk = ($jwtFields['grant_type'] ?? '') === 'urn:ietf:params:oauth:grant-type:jwt-bearer' && ($claims['iss'] ?? '') === 'robot@example.iam.gserviceaccount.com'
+        && ($claims['scope'] ?? '') === 'https://www.googleapis.com/auth/calendar'
+        && openssl_verify("$h.$p", (string) base64_decode(strtr($sig, '-_', '+/')), $public, OPENSSL_ALGO_SHA256) === 1;
+}
+$check('Google: the service account signs in with a JWT the public key verifies', $jwtOk, $why);
+$fb = json_decode((string) ($log[1]['body'] ?? ''), true) ?: [];
+$check('Google: freeBusy covers the window and the busy times come back', ($fb['items'][0]['id'] ?? '') === 'owner@gmail.com' && str_starts_with((string) ($fb['timeMin'] ?? ''), '2026-12-01T00:00:00') && $busy && $busy[0][0]->format('U') === (new DateTimeImmutable('2026-12-02T15:00:00Z'))->format('U'), $why ?: json_encode($fb));
+$queue = array_values($queue);
+$made = $try(fn() => appt_google_create($goog, $booking), $why);
+$ev = json_decode((string) ($log[2]['body'] ?? ''), true) ?: [];
+$check('Google: the event is made with the booking times and no guests', ($made['event_id'] ?? '') === 'gev1' && ($ev['start']['dateTime'] ?? '') === '2026-12-03T10:00:00-06:00' && !isset($ev['attendees']) && ($ev['location'] ?? '') === 'Room 2', $why ?: json_encode($ev));
+$queue = array_values($queue);
+$why = '';
+$try(fn() => appt_google_delete($goog, $made ?? []), $why);
+$check('Google: cancelling removes the event', ($log[3]['method'] ?? '') === 'DELETE' && $why === '', $why);
+$queue = array_values($queue);
+$why = '';
+$try(fn() => appt_google_busy($goog, $win, $win->modify('+1 day')), $why);
+$check('Google: a calendar not shared with the robot is explained', str_contains($why, 'notFound') && str_contains($why, 'Share the calendar'), $why);
+
+// CalDAV (cPanel's server): discovery through the principal and calendar home, a busy-time REPORT, PUT and DELETE with the saved password.
+$dav = ['type' => 'caldav', 'url' => 'https://example.com:2080', 'user' => 'owner@example.com', 'password' => 'secret', 'calendar_url' => 'https://example.com:2080/calendars/owner@example.com/calendar/'];
+$ms2 = fn(string $inner) => [207, '<?xml version="1.0"?><d:multistatus xmlns:d="DAV:" xmlns:c="urn:ietf:params:xml:ns:caldav">' . $inner . '</d:multistatus>', []];
+$resp = fn(string $href, string $props) => '<d:response><d:href>' . $href . '</d:href><d:propstat><d:prop>' . $props . '</d:prop><d:status>HTTP/1.1 200 OK</d:status></d:propstat></d:response>';
+$queue = [
+    ['#^PROPFIND https://example\.com:2080/$#', $ms2($resp('/', '<d:current-user-principal><d:href>/principals/owner@example.com/</d:href></d:current-user-principal><d:resourcetype><d:collection/></d:resourcetype>'))],
+    ['#^PROPFIND https://example\.com:2080/principals/owner@example\.com/$#', $ms2($resp('/principals/owner@example.com/', '<c:calendar-home-set><d:href>/calendars/owner@example.com/</d:href></c:calendar-home-set><d:resourcetype><d:principal/></d:resourcetype>'))],
+    ['#^PROPFIND https://example\.com:2080/calendars/owner@example\.com/$#', $ms2(
+        $resp('/calendars/owner@example.com/', '<d:resourcetype><d:collection/></d:resourcetype>')
+        . $resp('/calendars/owner@example.com/calendar/', '<d:resourcetype><d:collection/><c:calendar/></d:resourcetype><d:displayname>Work</d:displayname><c:supported-calendar-component-set><c:comp name="VEVENT"/></c:supported-calendar-component-set>')
+        . $resp('/calendars/owner@example.com/tasks/', '<d:resourcetype><d:collection/><c:calendar/></d:resourcetype><d:displayname>Tasks</d:displayname><c:supported-calendar-component-set><c:comp name="VTODO"/></c:supported-calendar-component-set>')
+        . $resp('/calendars/owner@example.com/inbox/', '<d:resourcetype><d:collection/><c:schedule-inbox/></d:resourcetype>'))],
+    ['#^REPORT https://example\.com:2080/calendars/owner@example\.com/calendar/$#', $ms2($resp('/calendars/owner@example.com/calendar/x.ics', '<d:getetag>"1"</d:getetag><c:calendar-data>BEGIN:VCALENDAR
+BEGIN:VEVENT
+UID:x
+DTSTART:20261202T150000Z
+DTEND:20261202T160000Z
+END:VEVENT
+END:VCALENDAR</c:calendar-data>'))],
+    ['#^PUT https://example\.com:2080/calendars/owner@example\.com/calendar/20261203-100000-abc123\.ics$#', [201, '', ['etag' => '"abc"']]],
+    ['#^DELETE https://example\.com:2080/calendars/owner@example\.com/calendar/20261203-100000-abc123\.ics$#', [204, '', []]],
+    ['#^PROPFIND #', [401, '', []]],
+];
+$log = [];
+$why = '';
+$found = $try(fn() => appt_caldav_discover($dav), $why);
+$check('CalDAV: finds the event calendar through the principal and home, leaving tasks and the inbox out', $found === [['https://example.com:2080/calendars/owner@example.com/calendar/', 'Work']] && ($log[0]['auth'] ?? '') === 'owner@example.com:secret' && in_array('Depth: 0', $log[0]['headers'] ?? [], true), $why ?: json_encode($found));
+$queue = array_values($queue);
+$busy = $try(fn() => appt_caldav_busy($dav, $win, $win->modify('+7 days')), $why);
+$report = $log[count($log) - 1] ?? [];
+$check('CalDAV: the busy-time REPORT covers the window and its events are read', str_contains((string) ($report['body'] ?? ''), 'time-range start="20261130T060000Z"') && $busy && $busy[0][0]->format('U') === (new DateTimeImmutable('2026-12-02T15:00:00Z'))->format('U'), $why ?: (string) ($report['body'] ?? ''));
+$queue = array_values($queue);
+$made = $try(fn() => appt_caldav_create($dav, $booking), $why);
+$put = $log[count($log) - 1] ?? [];
+$check('CalDAV: the booking is PUT as an .ics with If-None-Match and the etag kept', ($made['etag'] ?? '') === '"abc"' && in_array('If-None-Match: *', $put['headers'] ?? [], true) && str_contains((string) ($put['body'] ?? ''), 'DTSTART:20261203T160000Z') && str_contains((string) ($put['body'] ?? ''), 'UID:20261203-100000-abc123@example.com'), $why ?: json_encode($made));
+$queue = array_values($queue);
+$why = '';
+$try(fn() => appt_caldav_delete($dav, $made ?? []), $why);
+$check('CalDAV: cancelling removes the .ics', ($log[count($log) - 1]['method'] ?? '') === 'DELETE' && $why === '', $why);
+$queue = array_values($queue);
+$why = '';
+$try(fn() => appt_caldav_discover($dav), $why);
+$check('CalDAV: a wrong password is reported as such', str_contains($why, 'user name and password'), $why);
+unset($GLOBALS['appt_http_mock']);
+unset($GLOBALS['appt_mock_tokens']);
+
 /* ---------- 5. Fleet alerts decide correctly ---------- */
 $t0 = 1_800_000_000;
 $fine = fn(string $n, array $extra = []) => ['name' => $n, 'url' => "https://$n", 'ok' => true, 'error' => '', 'status' => $extra + ['ssl_days' => 60, 'last_backup' => date('c', $t0 - 3600), 'unsent_messages' => 0, 'timestamp' => date('c', $t0)]];

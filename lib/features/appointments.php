@@ -322,6 +322,9 @@ function appt_days(array $service, DateTimeImmutable $from, array $busy): array
 /** @return array{int, string, array} status, body and lower-cased response headers. */
 function appt_http(string $method, string $url, array $headers = [], string $body = '', ?string $basicAuth = null): array
 {
+    if (isset($GLOBALS['appt_http_mock'])) {
+        return ($GLOBALS['appt_http_mock'])($method, $url, $headers, $body, $basicAuth); // the self-test stands in for the calendar services
+    }
     $ch = curl_init($url);
     $responseHeaders = [];
     curl_setopt_array($ch, [
@@ -357,14 +360,30 @@ function appt_http(string $method, string $url, array $headers = [], string $bod
 /** Short-lived access tokens for Microsoft and Google, kept in a private file. */
 function appt_cached_token(string $kind): ?string
 {
+    if (isset($GLOBALS['appt_http_mock'])) {
+        return $GLOBALS['appt_mock_tokens'][$kind] ?? null; // the self-test keeps tokens in memory, never in the real cache file
+    }
     $cached = is_file(APPT_TOKEN_CACHE) ? include APPT_TOKEN_CACHE : null;
     return is_array($cached) && ($cached['kind'] ?? '') === $kind && ($cached['expires'] ?? 0) > time() + 60 ? (string) $cached['token'] : null;
 }
 
 function appt_store_token(string $kind, string $token, int $lifetime): void
 {
+    if (isset($GLOBALS['appt_http_mock'])) {
+        $GLOBALS['appt_mock_tokens'][$kind] = $token;
+        return;
+    }
     write_file(APPT_TOKEN_CACHE, '<?php return ' . var_export(['kind' => $kind, 'token' => $token, 'expires' => time() + $lifetime], true) . ';');
     @chmod(APPT_TOKEN_CACHE, 0600);
+}
+
+function appt_forget_token(string $kind): void
+{
+    if (isset($GLOBALS['appt_http_mock'])) {
+        unset($GLOBALS['appt_mock_tokens'][$kind]);
+        return;
+    }
+    @unlink(APPT_TOKEN_CACHE);
 }
 
 function appt_utc(DateTimeImmutable $d): string
@@ -419,7 +438,7 @@ function appt_caldav_parse_multistatus(string $xml): array
                 if ($children) {
                     $list = [];
                     foreach ($children as $child) {
-                        $list[] = $child->getName() === 'href' ? trim((string) $child) : $child->getName();
+                        $list[] = $child->getName() === 'href' ? trim((string) $child) : (isset($child['name']) ? $child->getName() . ':' . (string) $child['name'] : $child->getName());
                     }
                     $props[$name] = $list;
                 } else {
@@ -510,9 +529,9 @@ function appt_caldav_list_calendars(array $cal, string $home): array
         if (!in_array('calendar', $types, true)) {
             continue;
         }
-        $components = (array) ($props['supported-calendar-component-set'] ?? []);
-        if ($components && !in_array('comp', $components, true)) {
-            // Servers list components as <c:comp name="VEVENT"/>; the parser keeps the element name only, so any "comp" means it holds something.
+        // Servers say what a calendar holds as <c:comp name="VEVENT"/>; the parser keeps that as "comp:VEVENT". A tasks-only calendar is no use for bookings.
+        $components = array_filter((array) ($props['supported-calendar-component-set'] ?? []), fn($c) => str_starts_with((string) $c, 'comp:'));
+        if ($components && !in_array('comp:VEVENT', $components, true)) {
             continue;
         }
         $out[] = [appt_caldav_absolute($home, $href), (string) ($props['displayname'] ?? '') ?: basename(rtrim($href, '/'))];
@@ -837,11 +856,15 @@ function appt_ms_access_token(array $cal): string
 }
 
 /** Call Graph as the owner. Returns the decoded JSON; throws with Microsoft's reason. */
-function appt_ms_request(array $cal, string $method, string $pathOrUrl, ?array $json = null): array
+function appt_ms_request(array $cal, string $method, string $pathOrUrl, ?array $json = null, bool $retry = true): array
 {
     $url = str_starts_with($pathOrUrl, 'https://') ? $pathOrUrl : 'https://graph.microsoft.com/v1.0' . $pathOrUrl;
     [$status, $body] = appt_http($method, $url, ['Authorization: Bearer ' . appt_ms_access_token($cal), 'Content-Type: application/json', 'Prefer: outlook.timezone="UTC"'],
         $json === null ? '' : (string) json_encode($json));
+    if ($status === 401 && $retry) {
+        appt_forget_token('microsoft'); // the cached access token was revoked early; renew it once and try again
+        return appt_ms_request($cal, $method, $pathOrUrl, $json, false);
+    }
     $data = json_decode($body, true) ?: [];
     if ($status === 404 && $method === 'DELETE') {
         return [];
@@ -960,10 +983,14 @@ function appt_google_access_token(array $cal): string
     return (string) $json['access_token'];
 }
 
-function appt_google_request(array $cal, string $method, string $path, ?array $json = null): array
+function appt_google_request(array $cal, string $method, string $path, ?array $json = null, bool $retry = true): array
 {
     [$status, $body] = appt_http($method, 'https://www.googleapis.com/calendar/v3' . $path, ['Authorization: Bearer ' . appt_google_access_token($cal), 'Content-Type: application/json'],
         $json === null ? '' : (string) json_encode($json));
+    if ($status === 401 && $retry) {
+        appt_forget_token('google');
+        return appt_google_request($cal, $method, $path, $json, false);
+    }
     $data = json_decode($body, true) ?: [];
     if (($status === 404 || $status === 410) && $method === 'DELETE') {
         return [];
