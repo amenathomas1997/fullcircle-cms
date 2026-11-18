@@ -1099,9 +1099,9 @@ function appt_calendar_test(): string
             $busy = appt_caldav_busy($cal, $from, $to);
             return 'Connected to the CalDAV calendar at ' . $cal['calendar_url'] . '. It has ' . count($busy) . ' busy ' . (count($busy) === 1 ? 'time' : 'times') . ' in the next 7 days.';
         case 'microsoft':
-            $me = appt_ms_request($cal, 'GET', '/me?$select=displayName,mail,userPrincipalName');
+            // No /me call: a personal account's token covers only the calendar (no User.Read) and Graph answers 403 to it.
             $busy = appt_ms_busy($cal, $from, $to);
-            return 'Connected to the Microsoft calendar of ' . ($me['mail'] ?? $me['userPrincipalName'] ?? $me['displayName'] ?? 'the signed-in account')
+            return 'Connected to the Microsoft calendar of ' . (($cal['account'] ?? '') !== '' ? $cal['account'] : 'the signed-in account')
                 . (($cal['ms_calendar_name'] ?? '') !== '' ? ' (' . $cal['ms_calendar_name'] . ')' : '') . '. It has ' . count($busy) . ' busy ' . (count($busy) === 1 ? 'time' : 'times') . ' in the next 7 days.';
         case 'google':
             $info = appt_google_request($cal, 'GET', '/calendars/' . rawurlencode(appt_google_calendar_id($cal)));

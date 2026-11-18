@@ -2,6 +2,11 @@
 
 Every release of the kit is listed here, newest first. `php tools/update.php` prints the entries that are new since the version a site has installed.
 
+## 1.5.2 — 2026-11-18
+Microsoft calendar test works for Outlook.com accounts
+
+- "Test the connection" on the Appointments screen no longer asks Microsoft Graph for the owner's profile. A personal (Outlook.com) account's calendar token does not cover the profile and Graph answered 403 with no message, so the test failed as "Microsoft Graph:" even though the calendar itself was reachable. The test now names the account saved when the calendar was connected.
+
 ## 1.5.1 — 2026-11-18
 
 ### Calendar connections checked end to end
