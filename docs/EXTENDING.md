@@ -51,6 +51,10 @@ register_cron('daily', fn () => events_tidy());
 
 `admin/blocks-editor.js` turns HTML into a list of blocks and back. A new block type needs: an entry in `TYPES`, a parser branch in `parse()` that recognises exactly the HTML it writes, a `serialize()` case that writes it, a `renderBlock()` branch of ordinary labelled fields, and a `changeType()` conversion. Everything the parser doesn't recognise becomes an HTML block, so round trips are lossless.
 
+## Stand-ins for tests
+
+`tools/selftest.php` runs code that would reach other services with stand-ins in `$GLOBALS`: `appt_http_mock` for the calendar services, `mail_mock` for `send_mail_to()` and `send_mail_owner()`, and `sms_mock` for `sms_send()`. Each is a callable that gets what would have been sent. Write anything that talks to the outside through these functions, and a self-test can run it without a network.
+
 ## Item hooks
 
 `save_item()` and `delete_item()` call `run_item_hooks('before_save' | 'after_save' | 'after_delete', $type, $slug, $data)`. Use `before_save` to validate or annotate (for example the accessibility check adds `$data['a11y']`), `after_save` to rebuild indexes.

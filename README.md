@@ -1,6 +1,6 @@
 # Full Circle CMS
 
-Full Circle CMS is a small website system written in plain PHP. There is no database: pages, blog posts and settings are JSON files in the `content` folder, and private data (accounts, messages, email settings, keys) lives in `data`. It runs on ordinary shared hosting (cPanel, Apache or LiteSpeed, PHP 8.1 or later) and comes with an accessible control panel at `/admin/`. Everything was built to work well with screen readers, both for visitors and for the person running the site. This README is for the person who installs and hosts a site. OWNER-GUIDE.md is for the person who writes on it day to day. docs/EXTENDING.md is for anyone adding code.
+Full Circle CMS is a small website system written in plain PHP. There is no database: pages, blog posts and settings are JSON files in the `content` folder, and private data (accounts, messages, email settings, keys) lives in `data`. It runs on ordinary shared hosting (cPanel, Apache or LiteSpeed, PHP 8.1 or later) and comes with an accessible control panel at `/admin/`. Everything was built to work well with screen readers, both for visitors and for the person running the site. This README is for the person who installs and hosts a site. OWNER-GUIDE.md is for the person who writes on it day to day. docs/EXTENDING.md is for anyone adding code. The kit is free to use, change and share under the MIT license (see LICENSE).
 
 ## What's in the box
 
@@ -201,11 +201,13 @@ On the same app registration, under Authentication, add a Web redirect URI of `h
 Turn on **Appointments** under Settings, then Features, and open the Appointments screen. It has four parts:
 
 - **Services**: what can be booked, each with a name, a length in minutes, an optional price, where it happens and a short description. Each service has its own page under `/book/`; `/book/` lists them (or goes straight to the only one). Put `[book]` on any page to list them there.
-- **Hours and wording**: the hours you take appointments for each weekday (two ranges a day, so a lunch break works), how far apart start times are offered, a gap kept between appointments, the shortest notice, how far ahead people can book, whether to ask for a phone number, the label of the notes box, and the text shown after booking. Times are in the site's time zone from Settings.
+- **Hours and wording**: the hours you take appointments for each weekday (two ranges a day, so a lunch break works), how far apart start times are offered, the minutes kept free before and after each appointment (a service can set its own), the shortest notice, how far ahead people can book, whether to ask for a phone number, the label of the notes box, and the text shown after booking. Times are in the site's time zone from Settings.
 - **Calendar** (owner only): the one calendar that says when you are busy. Any busy time there is never offered, and every booking is written into it as an event with the visitor's details. A visitor's booking is checked against the calendar again at the moment they confirm, so two people cannot take the same time.
 - **Bookings**: who booked what and when, with a cancel link. Cancelling removes the event from the calendar and emails the visitor.
 
-The visitor picks a day (only days with openings are listed), then a time from a list of radio buttons, fills in their name and email, and gets a confirmation page and email with an "Add to my calendar" file and a cancel link. The owner is emailed too. A reminder goes to the visitor about a day before (the hourly cron job sends it). Bookings are kept as one JSON file each in `data/appointments/`.
+The visitor picks a day (only days with openings are listed), then a time from a list of radio buttons, fills in their name and email, and gets a confirmation page and email with an "Add to my calendar" file, a "Change the time" link and a cancel link. The owner is emailed too. A reminder goes to the visitor about a day before (the hourly cron job sends it), and a text message reminder as well if texts are set up under Settings, Text messages (Twilio) and the visitor ticked the box when booking. Bookings are kept as one JSON file each in `data/appointments/`.
+
+Changing the time (1.6.0): the "Change the time" link (`/book/move/<id>/?t=`) shows the same days and times, with the visitor's own booking counted as free. The old booking is released only once the new time is confirmed: the new calendar event is made first, then the old one is deleted, the old record is marked moved, and the visitor and the owner each get one "moved" email. `tools/calendar-roundtrip.php` makes, reads back, busy-checks and deletes one event in the connected calendar, whichever kind it is; its header says what to set up for Google first.
 
 ### A cPanel-hosted calendar, or any CalDAV calendar
 
@@ -253,6 +255,10 @@ Always on (`lib/features/redirects.php`, `admin/redirects.php`). `data/redirects
 ## Review links and scheduled pages
 
 Review links (`lib/features/review-links.php`) live in `data/review-links.json` (mode 600) as `token => {type, slug, created_by, created, expires}`, 32 hex characters each, 7 days by default and 1 to 30 selectable. The public route `/review/<token>/` renders the real page in the real layout with a banner, `Cache-Control: no-store` and `X-Robots-Tag: noindex`. Expired, revoked or unknown tokens get a 410 page. Deleting the page or post removes its links; a daily cron job prunes old entries.
+
+Pending edits (1.6.0): on a page's edit screen, **Save as a pending edit** keeps the change in `data/pending/pages/<slug>.json` instead of publishing it. A notice at the top of the page form then offers to edit, publish or discard it, and the Review links section can make a link that shows the pending edit (`pending => true` on the link), so a client can send the site owner a preview before anything goes live. Publishing goes through the ordinary page save, so it is checked and kept in the page's history.
+
+Page history (1.6.0, `lib/features/page-history.php`): the page, post and cheat sheet edit screens end with a **Previous versions** list (the last 10 saves, who saved each and when) and a **Put this version back** button on each. Putting one back saves it as a new version, so the one it replaced joins the list and the step can be undone. The copies are the revisions the core already keeps under `content/revisions/`.
 
 Scheduled pages (`lib/features/scheduled-pages.php`): a page may carry `publish_at` (site time zone). `page_is_live()` hides a published page whose time has not come from visitors, the sitemap and the Pages list status ("Scheduled"), while signed-in users and review links still see it.
 

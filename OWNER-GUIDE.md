@@ -30,6 +30,8 @@ Screens you can't open aren't in your navigation. If you land on one anyway, the
 2. Type your email address in the Email address field and your password in the Password field, then press Enter or activate the "Sign in" button.
 3. Five wrong tries pause sign-in for 15 minutes. You are signed out after 8 hours without activity. To sign out, use the "Sign out" button after the navigation.
 
+The first time you sign in from a browser or device the site has not seen before, it emails a six-digit code to your sign-in address after the password (unless the owner turned this off under Settings, or you use an authenticator app). The screen is headed "Enter your sign-in code": type the code in the "Code from the email" field within 10 minutes and press "Finish signing in". If it does not arrive, check the junk folder or press "Send me a new code". After that, the same browser is remembered for 30 days and is not asked again.
+
 If Microsoft 365 sign-in is turned on, the screen also has a "Sign in with Microsoft 365" button before the email form. It takes you to Microsoft, where you sign in with your own work account and its two-step verification, then brings you back signed in. It works for anyone whose account on the People screen has the same email address as their Microsoft 365 account. Email and password keep working too.
 
 If your site was set up before accounts existed, the sign-in screen still takes the old shared site password once. The first person to use it is asked for a name, an email address and a new password, becomes the owner, and the shared password is retired.
@@ -148,6 +150,10 @@ Use "Save post" to stay on the screen, "Save and view post" to open it on the we
 
 Under "More options" you find "View this post on the website", "Earlier versions of this post" and "Delete this post". Earlier versions are saved every time you save; you can view and restore any of the last 25.
 
+### Previous versions and undo
+
+Every page, post and cheat sheet edit screen ends with a **Previous versions** heading: a numbered list of the last 10 saves, each read as "Saved <date> by <name>", with a "See it" link and a "Put this version back" button. Putting a version back restores its title and content as a new save; the version it replaced goes to the top of the list, marked where it matters, so pressing "Put this version back" on that one undoes the change. The address, status and other settings are never changed by this.
+
 ### The accessibility check after saving
 
 Every time you save a page, blog post, cheat sheet or success story, its content is checked for the things that most often trip up screen reader users. Nothing is blocked; the "Saved" message ends with "N things to check for accessibility" and the first two, and the full list is at the top of the edit form until you fix them and save again. It looks for:
@@ -201,6 +207,8 @@ A review link lets someone see one page or post exactly as visitors will, withou
 1. Open the page or post in the control panel and go to the **Review links** heading at the end of the screen.
 2. Choose how long the link should work (1 to 30 days; 7 is the usual) and press "Create a review link".
 3. The new link appears in a box under Review links. Put your cursor in the box, select all and copy, then paste it into an email or chat.
+
+For a page that is already live, you can also keep a change off the website until someone has looked at it: press **Save as a pending edit** instead of "Save page". The website keeps showing the page as it was; a notice at the top of the page form, "There is a pending edit of this page", offers "Edit the pending version", "Publish the pending edit" and "Discard the pending edit". Under Review links, a new "What the new link shows" choice lets you make a link that shows the pending edit, so the site owner can read it before it is published. Publishing the pending edit is an ordinary save, so it appears under Previous versions and can be undone.
 
 Whoever opens the link sees the page with a yellow banner at the top saying it is a review copy, who shared it and until when. Search engines are told to stay away from it. When the time is up, or when you press **Revoke** next to the link, the address shows "This review link has expired" with a link to your contact page. Deleting a page or post removes its review links too. Anyone who has the link can open it, so treat it like the page itself.
 
@@ -360,6 +368,9 @@ Settings has an "On this screen" navigation to its sections.
 - **Features**: tick boxes that turn parts of the site on or off, including Forms, Events, Payments and "Second language pages". Turning one off hides its screens and pages; nothing is deleted.
 - **Email sending**: how the site sends email. "Send email through" offers the web server's own mail program, an ordinary email account's SMTP server (Gmail, Outlook.com or a mailbox from your web host), or Microsoft 365. For an email account, fill in the SMTP server name, port, user name and password; Gmail and Outlook.com need an app password, not the one you sign in with, and the Password field is empty every time you open Settings (leave it empty to keep the saved one). "Save and send a test email" tells you which step failed if something is wrong.
 - **Payments**: the Stripe key, currency, thank-you message and webhook details described above.
+- **Two-step sign-in by email**: a tick box, on unless you turn it off, that asks people for an emailed code the first time they sign in from a new browser; it cannot be turned on until email sending works. Owners also get "Forget all remembered browsers", which makes everyone type a code at their next sign-in.
+- **Monthly report**: a tick box for the email that comes on the 1st of each month (visitors, appointments, form answers, messages, the sites you watch, backups, the certificate and kit changes), and "Send me this month's report now" to see one straight away.
+- **Text messages**: the Twilio account SID, auth token and sending number that let the site text a reminder the day before an appointment to visitors who asked for one. Leave them empty to send no texts; "Save and send a test text" checks the set-up against your own mobile.
 - **Your password and people**: links to My account, People and Activity.
 
 The other sections, Ask a question assistant, Next opening and Microsoft 365 sign-in, are usually set up by the person who hosts the site.
