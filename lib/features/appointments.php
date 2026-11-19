@@ -10,13 +10,17 @@
  *   - a Google Calendar shared with a Google service account.
  * Times already taken in that calendar are never offered. A booking is written into the
  * calendar as an event and kept here as one JSON file in data/appointments/, the visitor
- * and the owner are emailed, and a reminder goes out the day before.
+ * and the owner are emailed, and a reminder goes out the day before, by email and, for a
+ * visitor who ticked the box, by text message (lib/features/sms.php).
+ * Minutes kept free before and after a booking come from the service, or the site default.
  *
  *   /book/                       the services, or straight to the only one
  *   /book/<service>/             days with openings
  *   /book/<service>/<date>/      the times that day and the booking form
- *   /book/done/<id>/?t=          confirmation, with an “Add to my calendar” file and a cancel link
+ *   /book/done/<id>/?t=          confirmation, with an “Add to my calendar” file, a cancel link and a “change the time” link
  *   /book/cancel/<id>/?t=        cancel a booking (asks first)
+ *   /book/move/<id>/?t=          pick a new time; the old booking is released only once the new one is confirmed
+ *                                (the openings pages take ?move=<id>&t= to carry that through)
  *   /book/<id>.ics?t=            the booking as an iCalendar file
  *   [book]                       the list of services, for any page
  *
@@ -74,6 +78,9 @@ function appt_settings(): array
         'hours' => $hours,
         'step' => isset(APPT_STEPS[$step]) ? $step : 30,
         'buffer' => max(0, min(120, (int) ($s['buffer'] ?? 0))),
+        // Minutes kept free before and after every booking (a service can set its own). Older sites had one "buffer" for both.
+        'buffer_before' => max(0, min(120, (int) ($s['buffer_before'] ?? $s['buffer'] ?? 0))),
+        'buffer_after' => max(0, min(120, (int) ($s['buffer_after'] ?? $s['buffer'] ?? 0))),
         'notice_hours' => max(0, min(24 * 30, (int) ($s['notice_hours'] ?? 24))),
         'window_days' => max(1, min(365, (int) ($s['window_days'] ?? 60))),
         'ask_phone' => array_key_exists('ask_phone', $s) ? !empty($s['ask_phone']) : true,
@@ -82,6 +89,7 @@ function appt_settings(): array
         'after' => trim((string) ($s['after'] ?? '')),
         'reminders' => array_key_exists('reminders', $s) ? !empty($s['reminders']) : true,
         'invite' => array_key_exists('invite', $s) ? !empty($s['invite']) : true,
+        'sms_reminders' => array_key_exists('sms_reminders', $s) ? !empty($s['sms_reminders']) : true,
     ];
 }
 
@@ -93,6 +101,9 @@ function appt_valid_clock(string $t): bool
 /** The calendar connection kept in data/config.php (type and credentials). */
 function appt_calendar(): array
 {
+    if (isset($GLOBALS['appt_calendar_mock'])) {
+        return (array) $GLOBALS['appt_calendar_mock']; // the self-test books against a stand-in calendar
+    }
     $c = (array) (config()['appt_calendar'] ?? []);
     $type = (string) ($c['type'] ?? 'none');
     return ['type' => isset(APPT_CALENDAR_TYPES[$type]) ? $type : 'none'] + $c;
@@ -131,7 +142,18 @@ function appt_service(string $slug): ?array
         return null;
     }
     $s['duration'] = max(5, min(480, (int) ($s['duration'] ?? 30)));
+    foreach (['buffer_before', 'buffer_after'] as $k) {
+        $s[$k] = isset($s[$k]) && $s[$k] !== '' ? max(0, min(120, (int) $s[$k])) : null;
+    }
     return $s;
+}
+
+/** Minutes kept free [before, after] a booking of this service: the service's own numbers, else the site's. */
+function appt_buffers(array $service): array
+{
+    $s = appt_settings();
+    $pick = fn(string $k) => isset($service[$k]) && $service[$k] !== '' && $service[$k] !== null ? max(0, min(120, (int) $service[$k])) : (int) $s[$k];
+    return [$pick('buffer_before'), $pick('buffer_after')];
 }
 
 function appt_bookings(): array
@@ -226,11 +248,17 @@ function appt_zone_words(DateTimeImmutable $d): string
 /**
  * Busy times between two moments: the connected calendar's events plus bookings made here.
  * Each item is [start, end] as DateTimeImmutable. Throws when the calendar cannot be read.
+ * $except is the id of a booking being moved: its own time (here and in the calendar) counts as free.
  */
-function appt_busy(DateTimeImmutable $from, DateTimeImmutable $to, bool $fresh = false): array
+function appt_busy(DateTimeImmutable $from, DateTimeImmutable $to, bool $fresh = false, string $except = ''): array
 {
     $busy = [];
+    $old = null;
     foreach (appt_bookings() as $b) {
+        if ($except !== '' && ($b['id'] ?? '') === $except) {
+            $old = $b;
+            continue;
+        }
         if (($b['status'] ?? '') === 'booked' && (string) $b['end'] > $from->format('c') && (string) $b['start'] < $to->format('c')) {
             $busy[] = [new DateTimeImmutable((string) $b['start']), new DateTimeImmutable((string) $b['end'])];
         }
@@ -242,17 +270,24 @@ function appt_busy(DateTimeImmutable $from, DateTimeImmutable $to, bool $fresh =
     $key = $cal['type'] . '|' . $from->format('c') . '|' . $to->format('c');
     $cache = read_json(APPT_BUSY_CACHE);
     if (!$fresh && $cache && ($cache['key'] ?? '') === $key && ($cache['at'] ?? 0) > time() - APPT_BUSY_TTL) {
+        $found = [];
         foreach ($cache['busy'] as [$s, $e]) {
-            $busy[] = [new DateTimeImmutable($s), new DateTimeImmutable($e)];
+            $found[] = [new DateTimeImmutable($s), new DateTimeImmutable($e)];
         }
-        return $busy;
+    } else {
+        $found = match ($cal['type']) {
+            'caldav' => appt_caldav_busy($cal, $from, $to),
+            'microsoft' => appt_ms_busy($cal, $from, $to),
+            'google' => appt_google_busy($cal, $from, $to),
+        };
+        write_json(APPT_BUSY_CACHE, ['key' => $key, 'at' => time(), 'busy' => array_map(fn($p) => [$p[0]->format('c'), $p[1]->format('c')], $found)]);
     }
-    $found = match ($cal['type']) {
-        'caldav' => appt_caldav_busy($cal, $from, $to),
-        'microsoft' => appt_ms_busy($cal, $from, $to),
-        'google' => appt_google_busy($cal, $from, $to),
-    };
-    write_json(APPT_BUSY_CACHE, ['key' => $key, 'at' => time(), 'busy' => array_map(fn($p) => [$p[0]->format('c'), $p[1]->format('c')], $found)]);
+    if ($old !== null) {
+        // The booking being moved is in the calendar as an event of its own: that event is not in the way.
+        $os = (new DateTimeImmutable((string) $old['start']))->getTimestamp();
+        $oe = (new DateTimeImmutable((string) $old['end']))->getTimestamp();
+        $found = array_values(array_filter($found, fn($p) => !($p[0]->getTimestamp() === $os && $p[1]->getTimestamp() === $oe)));
+    }
     return array_merge($busy, $found);
 }
 
@@ -274,7 +309,9 @@ function appt_openings(array $service, DateTimeImmutable $day, array $busy): arr
         return [];
     }
     $length = $service['duration'] * 60;
-    $buffer = $s['buffer'] * 60;
+    [$before, $after] = appt_buffers($service);
+    $before *= 60;
+    $after *= 60;
     $out = [];
     foreach ($s['hours'][strtolower($day->format('D'))] ?? [] as [$open, $close]) {
         [$oh, $om] = explode(':', $open);
@@ -286,7 +323,8 @@ function appt_openings(array $service, DateTimeImmutable $day, array $busy): arr
             if ($start >= $earliest && $start <= $latest) {
                 $free = true;
                 foreach ($busy as [$bs, $be]) {
-                    if ($bs->getTimestamp() < $finish + $buffer && $be->getTimestamp() + $buffer > $start->getTimestamp()) {
+                    // Busy if anything overlaps the booking plus its free minutes on either side.
+                    if ($bs->getTimestamp() < $finish + $after && $be->getTimestamp() > $start->getTimestamp() - $before) {
                         $free = false;
                         break;
                     }
@@ -1115,12 +1153,16 @@ function appt_calendar_test(): string
    Making, confirming and cancelling a booking
    ===================================================================== */
 
-/** Make the booking: check the time is still free, write the calendar event, save, email. Throws when it cannot. */
-function appt_book(array $service, DateTimeImmutable $start, array $visitor): array
+/**
+ * Make the booking: check the time is still free, write the calendar event, save, email. Throws when it cannot.
+ * With $moving (an existing booking), this is a change of time: the new booking is made first, and only then is
+ * the old one released (its calendar event removed, its record marked moved) and the visitor and owner told once.
+ */
+function appt_book(array $service, DateTimeImmutable $start, array $visitor, ?array $moving = null): array
 {
     $end = $start->modify('+' . $service['duration'] . ' minutes');
     $day = $start->setTime(0, 0);
-    $busy = appt_busy($day, $day->modify('+1 day'), true);
+    $busy = appt_busy($day, $day->modify('+1 day'), true, (string) ($moving['id'] ?? ''));
     $stillFree = false;
     foreach (appt_openings($service, $day, $busy) as $o) {
         if ($o->getTimestamp() === $start->getTimestamp()) {
@@ -1148,20 +1190,54 @@ function appt_book(array $service, DateTimeImmutable $start, array $visitor): ar
         'email' => $visitor['email'],
         'phone' => (string) ($visitor['phone'] ?? ''),
         'notes' => (string) ($visitor['notes'] ?? ''),
-        'language' => current_lang(),
+        'sms_opt_in' => !empty($visitor['sms_opt_in']) && ($visitor['phone'] ?? '') !== '',
+        'language' => $moving !== null ? (string) ($moving['language'] ?? current_lang()) : current_lang(),
         'calendar' => ['type' => 'none'],
         'emails' => [],
     ];
+    if ($moving !== null) {
+        $b['moved_from'] = ['id' => (string) $moving['id'], 'start' => (string) $moving['start'], 'end' => (string) $moving['end']];
+    }
     if (!is_dir(APPT_DIR)) {
         mkdir(APPT_DIR, 0700, true);
     }
     $b['calendar'] = appt_calendar_create($b);
     appt_save_booking($b);
     @unlink(APPT_BUSY_CACHE);
-    appt_email_visitor($b, 'confirmed');
-    appt_email_owner($b, 'new');
+    if ($moving !== null) {
+        // The new time is confirmed: now release the old one, quietly (the "moved" emails say it all).
+        $old = appt_booking((string) $moving['id']) ?? $moving;
+        try {
+            appt_calendar_delete($old);
+        } catch (Throwable $e) {
+            $b['calendar_problem'] = 'The old event may still be in the calendar: ' . $e->getMessage();
+        }
+        $old['status'] = 'cancelled';
+        $old['cancelled'] = date('c');
+        $old['cancelled_by'] = 'moved';
+        $old['moved_to'] = $b['id'];
+        appt_save_booking($old);
+        appt_email_visitor($b, 'moved');
+        appt_email_owner($b, 'moved');
+    } else {
+        appt_email_visitor($b, 'confirmed');
+        appt_email_owner($b, 'new');
+    }
     appt_save_booking($b);
     return $b;
+}
+
+/** Change the time of a booking: a new booking at $start for the same visitor, then the old one released. Throws when it cannot. */
+function appt_move(array $old, DateTimeImmutable $start): array
+{
+    if (($old['status'] ?? '') !== 'booked') {
+        throw new RuntimeException('That appointment is no longer booked.');
+    }
+    // The service as it is now; if it was deleted meanwhile, the booking's own copy of it.
+    $service = appt_service((string) ($old['service'] ?? '')) ?? ['slug' => (string) ($old['service'] ?? ''), 'title' => (string) $old['service_title'],
+        'duration' => (int) $old['duration'], 'price' => (string) ($old['price'] ?? ''), 'location' => (string) ($old['location'] ?? ''), 'status' => 'published'];
+    return appt_book($service, $start, ['name' => $old['name'], 'email' => $old['email'], 'phone' => (string) ($old['phone'] ?? ''), 'notes' => (string) ($old['notes'] ?? ''),
+        'sms_opt_in' => !empty($old['sms_opt_in'])], $old);
 }
 
 function appt_cancel(array $b, string $by): array
@@ -1201,6 +1277,11 @@ function appt_cancel_url(array $b): string
     return '/book/cancel/' . $b['id'] . '/?t=' . appt_token($b['id']);
 }
 
+function appt_move_url(array $b): string
+{
+    return '/book/move/' . $b['id'] . '/?t=' . appt_token($b['id']);
+}
+
 function appt_ics_url(array $b): string
 {
     return '/book/' . $b['id'] . '.ics?t=' . appt_token($b['id']);
@@ -1212,17 +1293,22 @@ function appt_email_visitor(array &$b, string $kind): void
     $lang = (string) ($b['language'] ?: primary_lang());
     $t = fn(string $k) => t_in($lang, $k);
     $when = appt_when_words($b, $lang);
-    $subject = ($kind === 'cancelled' ? $t('book_mail_cancelled_subject') : ($kind === 'reminder' ? $t('book_mail_reminder_subject') : $t('book_mail_confirmed_subject')))
-        . ': ' . $b['service_title'] . ', ' . appt_date_words(appt_start($b), $lang);
+    $subjects = ['cancelled' => 'book_mail_cancelled_subject', 'reminder' => 'book_mail_reminder_subject', 'moved' => 'book_mail_moved_subject'];
+    $bodies = ['cancelled' => 'book_mail_cancelled_body', 'reminder' => 'book_mail_reminder_body', 'moved' => 'book_mail_moved_body'];
+    $subject = $t($subjects[$kind] ?? 'book_mail_confirmed_subject') . ': ' . $b['service_title'] . ', ' . appt_date_words(appt_start($b), $lang);
     $html = '<p>' . h($t('book_mail_hello')) . ' ' . h($b['name']) . ',</p>';
-    $html .= '<p>' . h($kind === 'cancelled' ? $t('book_mail_cancelled_body') : ($kind === 'reminder' ? $t('book_mail_reminder_body') : $t('book_mail_confirmed_body'))) . '</p>';
+    $html .= '<p>' . h($t($bodies[$kind] ?? 'book_mail_confirmed_body')) . '</p>';
     $html .= '<p><strong>' . h($b['service_title']) . '</strong><br>' . h($when) . (($b['location'] ?? '') !== '' ? '<br>' . h((string) $b['location']) : '') . '</p>';
+    if ($kind === 'moved' && !empty($b['moved_from']['start'])) {
+        $html .= '<p>' . h(sprintf($t('book_moved_from'), appt_when_words(['start' => $b['moved_from']['start'], 'end' => $b['moved_from']['end']], $lang))) . '</p>';
+    }
     if ($kind !== 'cancelled') {
         $after = appt_settings()['after'];
         if ($after !== '') {
             $html .= '<p>' . nl2br(h($after)) . '</p>';
         }
         $html .= '<p><a href="' . h(site_url(appt_ics_url($b))) . '">' . h($t('add_to_calendar')) . '</a><br>'
+            . '<a href="' . h(site_url(appt_move_url($b))) . '">' . h($t('book_move_link')) . '</a><br>'
             . '<a href="' . h(site_url(appt_cancel_url($b))) . '">' . h($t('book_cancel_link')) . '</a></p>';
     }
     $html .= '<p>' . h(site_name()) . '<br>' . h(contact_words($lang)) . '</p>';
@@ -1237,11 +1323,16 @@ function appt_email_visitor(array &$b, string $kind): void
 
 function appt_email_owner(array &$b, string $kind): void
 {
-    $subject = ($kind === 'cancelled' ? 'Cancelled appointment' : 'New appointment') . ': ' . $b['service_title'] . ' with ' . $b['name'] . ', ' . appt_start($b)->format('D M j, g:i a');
-    $html = '<p>' . ($kind === 'cancelled' ? $b['name'] . ' cancelled their appointment.' : $b['name'] . ' booked an appointment on ' . h(site_name()) . '.') . '</p>'
+    $subject = ['cancelled' => 'Cancelled appointment', 'moved' => 'Moved appointment'][$kind] ?? 'New appointment';
+    $subject .= ': ' . $b['service_title'] . ' with ' . $b['name'] . ', ' . appt_start($b)->format('D M j, g:i a');
+    $html = '<p>' . match ($kind) {
+        'cancelled' => h($b['name']) . ' cancelled their appointment.',
+        'moved' => h($b['name']) . ' moved their appointment' . (!empty($b['moved_from']['start']) ? ' from ' . h(appt_when_words(['start' => $b['moved_from']['start'], 'end' => $b['moved_from']['end']], primary_lang())) : '') . '. The old event was removed from the calendar and a new one made.',
+        default => h($b['name']) . ' booked an appointment on ' . h(site_name()) . '.',
+    } . '</p>'
         . '<p><strong>' . h($b['service_title']) . '</strong><br>' . h(appt_when_words($b, primary_lang())) . '</p>'
         . '<p>Name: ' . h($b['name']) . '<br>Email: <a href="mailto:' . h($b['email']) . '">' . h($b['email']) . '</a>'
-        . (($b['phone'] ?? '') !== '' ? '<br>Phone: ' . h((string) $b['phone']) : '') . '</p>'
+        . (($b['phone'] ?? '') !== '' ? '<br>Phone: ' . h((string) $b['phone']) . (!empty($b['sms_opt_in']) ? ' (asked for a text reminder)' : '') : '') . '</p>'
         . (($b['notes'] ?? '') !== '' ? '<p>Notes:<br>' . nl2br(h((string) $b['notes'])) . '</p>' : '')
         . (($b['calendar']['type'] ?? 'none') === 'none' ? '<p>No calendar is connected, so this is only recorded on the website.</p>' : '')
         . (($b['calendar_problem'] ?? '') !== '' ? '<p>' . h((string) $b['calendar_problem']) . '</p>' : '')
@@ -1272,6 +1363,9 @@ register_route(function (string $path, array $parts): bool {
     }
     if (count($rest) === 2 && $rest[0] === 'cancel') {
         appt_cancel_page($rest[1]);
+    }
+    if (count($rest) === 2 && $rest[0] === 'move') {
+        appt_move_page($rest[1]);
     }
     if (count($rest) === 1 && preg_match('/^([0-9]{8}-[0-9]{6}-[0-9a-f]{6})\.ics$/', $rest[0], $m)) {
         appt_ics_download($m[1]);
@@ -1324,12 +1418,62 @@ function appt_services_page(): never
     appt_page(t('book_title'), '<h1>' . h(t('book_title')) . '</h1>' . ($intro !== '' ? '<p class="lede">' . nl2br(h($intro)) . '</p>' : '') . appt_services_html(), '/book/');
 }
 
+/**
+ * The booking whose time is being changed, when the request carries ?move=<id>&t=<token> for this service;
+ * null when it is an ordinary booking. A wrong id or token is a 404, like any other bad link.
+ */
+function appt_moving(string $serviceSlug): ?array
+{
+    $id = (string) ($_GET['move'] ?? $_POST['move'] ?? '');
+    if ($id === '') {
+        return null;
+    }
+    $b = appt_booking($id);
+    if (!$b || !appt_token_ok($id, (string) ($_GET['t'] ?? $_POST['t'] ?? '')) || ($b['service'] ?? '') !== $serviceSlug) {
+        not_found();
+    }
+    if (($b['status'] ?? '') !== 'booked') {
+        header('Location: ' . appt_done_url(!empty($b['moved_to']) ? (appt_booking((string) $b['moved_to']) ?? $b) : $b), true, 303);
+        exit;
+    }
+    if (($b['language'] ?? '') !== '' && $b['language'] !== current_lang()) {
+        current_lang((string) $b['language']);
+    }
+    return $b;
+}
+
+/** "?move=<id>&t=<token>" to carry a change of time through the openings pages; '' for an ordinary booking. */
+function appt_move_query(?array $moving): string
+{
+    return $moving ? '?move=' . $moving['id'] . '&t=' . appt_token((string) $moving['id']) : '';
+}
+
+/** The note at the top of the openings pages while a time is being changed. */
+function appt_moving_note(array $moving): string
+{
+    return '<div class="notice" role="status"><p>' . h(sprintf(t('book_move_intro'), $moving['service_title'], appt_when_words($moving))) . '</p>'
+        . '<p><a href="' . h(appt_done_url($moving)) . '">' . h(t('book_keep')) . '</a></p></div>';
+}
+
+/** /book/move/<id>/: start changing the time of a booking: the days with openings for its service. */
+function appt_move_page(string $id): never
+{
+    $b = appt_load_visitor_booking($id);
+    if (($b['status'] ?? '') !== 'booked') {
+        header('Location: ' . appt_done_url(!empty($b['moved_to']) ? (appt_booking((string) $b['moved_to']) ?? $b) : $b), true, 303);
+        exit;
+    }
+    header('Location: /book/' . rawurlencode((string) $b['service']) . '/' . appt_move_query($b), true, 303);
+    exit;
+}
+
 function appt_days_page(string $slug): never
 {
     $service = appt_service($slug);
     if (!$service || ($service['status'] ?? '') !== 'published') {
         not_found();
     }
+    $moving = appt_moving($slug);
     $from = appt_now()->setTime(0, 0);
     if (isset($_GET['from']) && preg_match('/^\d{4}-\d{2}-\d{2}$/', (string) $_GET['from'])) {
         try {
@@ -1339,12 +1483,14 @@ function appt_days_page(string $slug): never
         }
     }
     [, $latest] = appt_window();
-    $html = '<h1>' . h((string) $service['title']) . '</h1>'
-        . '<p class="lede">' . h(appt_length_words((int) $service['duration'])) . (($service['price'] ?? '') !== '' ? ' · ' . h((string) $service['price']) : '') . '</p>'
-        . (($service['description'] ?? '') !== '' ? '<p>' . nl2br(h((string) $service['description'])) . '</p>' : '')
+    $q = appt_move_query($moving);
+    $html = '<h1>' . h($moving ? t('book_move_title') : (string) $service['title']) . '</h1>'
+        . ($moving ? appt_moving_note($moving) : '')
+        . '<p class="lede">' . h((string) $service['title']) . ': ' . h(appt_length_words((int) $service['duration'])) . (($service['price'] ?? '') !== '' ? ' · ' . h((string) $service['price']) : '') . '</p>'
+        . (($service['description'] ?? '') !== '' && !$moving ? '<p>' . nl2br(h((string) $service['description'])) . '</p>' : '')
         . (($service['location'] ?? '') !== '' ? '<p>' . h((string) $service['location']) . '</p>' : '');
     try {
-        $busy = appt_busy($from, $latest);
+        $busy = appt_busy($from, $latest, false, (string) ($moving['id'] ?? ''));
         $days = appt_days($service, $from, $busy);
     } catch (Throwable $e) {
         error_log('Appointments: ' . $e->getMessage());
@@ -1357,15 +1503,15 @@ function appt_days_page(string $slug): never
         $html .= '<ul class="day-list">';
         foreach ($days as $date => $n) {
             $d = new DateTimeImmutable($date, appt_zone());
-            $html .= '<li><a href="/book/' . h($slug) . '/' . $date . '/">' . h(appt_date_words($d)) . '</a> <span class="day-count">(' . $n . ' ' . h(t($n === 1 ? 'book_one_time' : 'book_times')) . ')</span></li>';
+            $html .= '<li><a href="/book/' . h($slug) . '/' . $date . '/' . h($q) . '">' . h(appt_date_words($d)) . '</a> <span class="day-count">(' . $n . ' ' . h(t($n === 1 ? 'book_one_time' : 'book_times')) . ')</span></li>';
         }
         $html .= '</ul>';
         $last = new DateTimeImmutable(array_key_last($days), appt_zone());
         if (count($days) >= APPT_MAX_DAYS_SHOWN && $last->modify('+1 day') <= $latest) {
-            $html .= '<p><a href="/book/' . h($slug) . '/?from=' . $last->modify('+1 day')->format('Y-m-d') . '">' . h(t('book_later_days')) . '</a></p>';
+            $html .= '<p><a href="/book/' . h($slug) . '/?from=' . $last->modify('+1 day')->format('Y-m-d') . ($q !== '' ? '&' . substr($q, 1) : '') . '">' . h(t('book_later_days')) . '</a></p>';
         }
     }
-    $html .= (count(appt_services()) > 1 ? '<p><a href="/book/">' . h(t('book_other_services')) . '</a></p>' : '');
+    $html .= (count(appt_services()) > 1 && !$moving ? '<p><a href="/book/">' . h(t('book_other_services')) . '</a></p>' : '');
     appt_page((string) $service['title'], $html, '/book/' . $slug . '/');
 }
 
@@ -1386,21 +1532,24 @@ function appt_times_page(string $slug, string $date): never
         not_found();
     }
     $path = '/book/' . $slug . '/' . $date . '/';
+    $moving = appt_moving($slug);
+    $q = appt_move_query($moving);
     $errors = [];
-    $v = ['time' => '', 'name' => '', 'email' => '', 'phone' => '', 'notes' => ''];
+    $v = ['time' => '', 'name' => '', 'email' => '', 'phone' => '', 'notes' => '', 'sms_opt_in' => ''];
     if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['book_form'] ?? '') === '1') {
-        [$errors, $v] = appt_handle_post($service, $day, $path);
+        [$errors, $v] = appt_handle_post($service, $day, $path, $moving);
     }
     try {
-        $busy = appt_busy($day, $day->modify('+1 day'));
+        $busy = appt_busy($day, $day->modify('+1 day'), false, (string) ($moving['id'] ?? ''));
         $openings = appt_openings($service, $day, $busy);
     } catch (Throwable $e) {
         error_log('Appointments: ' . $e->getMessage());
         appt_page((string) $service['title'], '<h1>' . h((string) $service['title']) . '</h1><p class="notice">' . h(t('book_unavailable')) . '</p>' . appt_back_link(), $path);
     }
-    $title = (string) $service['title'] . ': ' . appt_date_words($day);
-    $html = '<h1>' . h($title) . '</h1><p class="lede">' . h(appt_length_words((int) $service['duration'])) . (($service['price'] ?? '') !== '' ? ' · ' . h((string) $service['price']) : '') . '</p>'
-        . '<p><a href="/book/' . h($slug) . '/">' . h(t('book_other_day')) . '</a></p>';
+    $title = ($moving ? t('book_move_title') . ': ' : (string) $service['title'] . ': ') . appt_date_words($day);
+    $html = '<h1>' . h($title) . '</h1>' . ($moving ? appt_moving_note($moving) : '')
+        . '<p class="lede">' . h((string) $service['title']) . ': ' . h(appt_length_words((int) $service['duration'])) . (($service['price'] ?? '') !== '' ? ' · ' . h((string) $service['price']) : '') . '</p>'
+        . '<p><a href="/book/' . h($slug) . '/' . h($q) . '">' . h(t('book_other_day')) . '</a></p>';
     if (!$openings) {
         appt_page($title, $html . '<p>' . h(t('book_day_full')) . '</p>', $path);
     }
@@ -1433,8 +1582,9 @@ function appt_times_page(string $slug, string $date): never
     };
     $s = appt_settings();
     $timeErr = $errors['time'] ?? '';
-    $html .= '<form method="post" action="' . h($path) . '" class="book-form" novalidate>'
+    $html .= '<form method="post" action="' . h($path . $q) . '" class="book-form" novalidate>'
         . '<input type="hidden" name="book_form" value="1"><input type="hidden" name="form_token" value="' . h(contact_form_token()) . '">'
+        . ($moving ? '<input type="hidden" name="move" value="' . h((string) $moving['id']) . '"><input type="hidden" name="t" value="' . h(appt_token((string) $moving['id'])) . '">' : '')
         . '<fieldset class="field slots' . ($timeErr !== '' ? ' field-error' : '') . '"' . ($timeErr !== '' ? ' aria-describedby="book-time-error"' : '') . '><legend>' . h(t('book_pick_time')) . '</legend>'
         . ($timeErr !== '' ? '<p class="error-message" id="book-time-error">' . h($timeErr) . '</p>' : '')
         . '<ul class="slot-list">';
@@ -1443,32 +1593,68 @@ function appt_times_page(string $slug, string $date): never
         $html .= '<li><input type="radio" id="book-time-' . $i . '" name="time" value="' . $val . '"' . ($v['time'] === $val ? ' checked' : '') . ' required>'
             . '<label for="book-time-' . $i . '">' . h(appt_time_words($o)) . '<span class="visually-hidden"> ' . h(t('book_to')) . ' ' . h(appt_time_words($o->modify('+' . $service['duration'] . ' minutes'))) . '</span></label></li>';
     }
-    $html .= '</ul></fieldset>'
-        . '<h2>' . h(t('book_your_details')) . '</h2>'
+    $html .= '</ul></fieldset>';
+    if ($moving) {
+        // The visitor's details come from the booking being moved; only the time is asked.
+        $html .= '<p>' . h(t('contact_name')) . ': ' . h($moving['name']) . '<br>' . h(t('contact_email')) . ': ' . h($moving['email']) . '</p>'
+            . '<div class="visually-hidden" aria-hidden="true"><label for="book-website">Leave this empty</label><input id="book-website" name="website" type="text" tabindex="-1" autocomplete="off"></div>'
+            . '<button type="submit" class="button">' . h(t('book_move_confirm')) . '</button></form>';
+        appt_page($title, $html, $path);
+    }
+    $smsBox = '';
+    if ($s['ask_phone'] && $s['sms_reminders'] && function_exists('sms_enabled') && sms_enabled()) {
+        $smsErr = $errors['sms_opt_in'] ?? '';
+        $smsBox = '<div class="field checkbox' . ($smsErr !== '' ? ' field-error' : '') . '"><input type="checkbox" id="book-sms_opt_in" name="sms_opt_in" value="1"' . ($v['sms_opt_in'] !== '' ? ' checked' : '')
+            . ($smsErr !== '' ? ' aria-invalid="true" aria-describedby="book-sms_opt_in-error"' : '') . '><label for="book-sms_opt_in">' . h(t('book_sms_opt_in')) . '</label>'
+            . ($smsErr !== '' ? '<p class="error-message" id="book-sms_opt_in-error">' . h($smsErr) . '</p>' : '') . '</div>';
+    }
+    $html .= '<h2>' . h(t('book_your_details')) . '</h2>'
         . $field('name', t('contact_name'), 'text', true, ['autocomplete' => 'name'])
         . $field('email', t('contact_email'), 'email', true, ['autocomplete' => 'email', 'hint' => t('book_email_hint')])
         . ($s['ask_phone'] ? $field('phone', t('contact_phone'), 'tel', false, ['autocomplete' => 'tel']) : '')
+        . $smsBox
         . $field('notes', $s['notes_label'] !== '' ? $s['notes_label'] : t('book_notes'), 'textarea', false)
         . '<div class="visually-hidden" aria-hidden="true"><label for="book-website">Leave this empty</label><input id="book-website" name="website" type="text" tabindex="-1" autocomplete="off"></div>'
         . '<button type="submit" class="button">' . h(t('book_confirm')) . '</button></form>';
     appt_page($title, $html, $path);
 }
 
-/** Check the booking form; on success make the booking and go to the confirmation page. */
-function appt_handle_post(array $service, DateTimeImmutable $day, string $path): array
+/** Check the booking form; on success make the booking (or move $moving to the new time) and go to the confirmation page. */
+function appt_handle_post(array $service, DateTimeImmutable $day, string $path, ?array $moving = null): array
 {
     $v = [];
-    foreach (['time', 'name', 'email', 'phone', 'notes'] as $k) {
+    foreach (['time', 'name', 'email', 'phone', 'notes', 'sms_opt_in'] as $k) {
         $v[$k] = trim((string) ($_POST[$k] ?? ''));
     }
     if (($_POST['website'] ?? '') !== '' || !contact_token_ok((string) ($_POST['form_token'] ?? ''))) {
         // A bot, or a form left open for more than a day: start over quietly.
-        header('Location: ' . $path, true, 303);
+        header('Location: ' . $path . appt_move_query($moving), true, 303);
         exit;
     }
     $errors = [];
     if (!appt_valid_clock($v['time'])) {
         $errors['time'] = t('book_err_time');
+    }
+    if ($moving !== null) {
+        if (!$errors) {
+            [$hh, $mm] = explode(':', $v['time']);
+            $start = $day->setTime((int) $hh, (int) $mm);
+            if ($start->getTimestamp() === appt_start($moving)->getTimestamp()) {
+                return [['time' => t('book_move_same')], $v];
+            }
+            try {
+                $b = appt_move($moving, $start);
+            } catch (Throwable $e) {
+                error_log('Appointments: move failed: ' . $e->getMessage());
+                return [['time' => $e->getMessage() === t('book_taken') ? t('book_taken') : t('book_failed')], $v];
+            }
+            header('Location: ' . appt_done_url($b) . '#book-status', true, 303);
+            exit;
+        }
+        return [$errors, $v];
+    }
+    if ($v['sms_opt_in'] !== '' && $v['phone'] === '') {
+        $errors['sms_opt_in'] = t('book_err_sms_phone');
     }
     if ($v['name'] === '' || mb_strlen($v['name']) > 120) {
         $errors['name'] = sprintf(t('form_err_required'), t('contact_name'));
@@ -1515,10 +1701,15 @@ function appt_load_visitor_booking(string $id): array
 function appt_done_page(string $id): never
 {
     $b = appt_load_visitor_booking($id);
+    if (($b['status'] ?? '') === 'cancelled' && !empty($b['moved_to']) && ($new = appt_booking((string) $b['moved_to']))) {
+        header('Location: ' . appt_done_url($new), true, 303); // an old link to a booking that was moved shows the new time
+        exit;
+    }
     $cancelled = ($b['status'] ?? '') === 'cancelled';
+    $moved = !$cancelled && !empty($b['moved_from']);
     $after = appt_settings()['after'];
-    $html = '<h1 id="book-status" tabindex="-1" data-focus-on-load>' . h($cancelled ? t('book_cancelled_title') : t('book_done_title')) . '</h1>'
-        . '<p class="lede">' . h($cancelled ? t('book_cancelled_body') : t('book_done_body')) . '</p>'
+    $html = '<h1 id="book-status" tabindex="-1" data-focus-on-load>' . h($cancelled ? t('book_cancelled_title') : ($moved ? t('book_moved_title') : t('book_done_title'))) . '</h1>'
+        . '<p class="lede">' . h($cancelled ? t('book_cancelled_body') : ($moved ? t('book_moved_body') : t('book_done_body'))) . '</p>'
         . '<dl class="event-details"><dt>' . h(t('book_what')) . '</dt><dd>' . h($b['service_title']) . ' (' . h(appt_length_words((int) $b['duration'])) . ')</dd>'
         . '<dt>' . h(t('book_when')) . '</dt><dd>' . h(appt_when_words($b)) . '</dd>'
         . (($b['location'] ?? '') !== '' ? '<dt>' . h(t('book_where')) . '</dt><dd>' . h((string) $b['location']) . '</dd>' : '')
@@ -1527,10 +1718,11 @@ function appt_done_page(string $id): never
         $html .= ($after !== '' ? '<p>' . nl2br(h($after)) . '</p>' : '')
             . '<p>' . h(sprintf(t('book_emailed'), $b['email'])) . '</p>'
             . '<p class="buttons"><a class="button button-outline" href="' . h(appt_ics_url($b)) . '">' . h(t('add_to_calendar')) . '</a> '
+            . '<a class="button button-outline" href="' . h(appt_move_url($b)) . '">' . h(t('book_move_link')) . '</a> '
             . '<a class="button button-outline" href="' . h(appt_cancel_url($b)) . '">' . h(t('book_cancel_link')) . '</a></p>';
     }
     $html .= '<p><a href="/">' . h(t('book_home')) . '</a></p>';
-    appt_page($cancelled ? t('book_cancelled_title') : t('book_done_title'), $html, '/book/done/' . $id . '/');
+    appt_page($cancelled ? t('book_cancelled_title') : ($moved ? t('book_moved_title') : t('book_done_title')), $html, '/book/done/' . $id . '/');
 }
 
 function appt_cancel_page(string $id): never
@@ -1570,23 +1762,62 @@ function appt_ics_download(string $id): never
    ===================================================================== */
 
 register_cron('hourly', function (): void {
-    if (!feature_on('appointments') || !appt_settings()['reminders']) {
+    if (!feature_on('appointments')) {
         return;
     }
+    $s = appt_settings();
     $from = time() + 23 * 3600;
     $to = time() + 25 * 3600;
+    $texts = $s['sms_reminders'] && function_exists('sms_enabled') && sms_enabled();
     foreach (appt_bookings() as $b) {
-        if (($b['status'] ?? '') !== 'booked' || !empty($b['reminded'])) {
+        if (($b['status'] ?? '') !== 'booked') {
             continue;
         }
         $start = strtotime((string) $b['start']);
-        if ($start >= $from && $start <= $to) {
+        if ($s['reminders'] && empty($b['reminded']) && $start >= $from && $start <= $to) {
             $b['reminded'] = date('c');
             appt_email_visitor($b, 'reminder');
             appt_save_booking($b);
         }
+        if ($texts && !empty($b['sms_opt_in']) && empty($b['sms_reminded']) && appt_sms_reminder_due($b, appt_now())) {
+            $b['sms_reminded'] = date('c');
+            $b['sms'][] = ['kind' => 'reminder', 'at' => date('c')] + appt_sms_send($b, appt_sms_reminder_text($b));
+            appt_save_booking($b);
+        }
     }
 });
+
+/** A text reminder goes the day before, in the daytime (9 am to 8 pm in the site's zone): true at the first hourly run that fits. */
+function appt_sms_reminder_due(array $b, DateTimeImmutable $now): bool
+{
+    $start = appt_start($b);
+    $hour = (int) $now->format('G');
+    return $start->format('Y-m-d') === $now->modify('+1 day')->format('Y-m-d') && $hour >= 9 && $hour < 20;
+}
+
+/** "Hi Pat, a reminder of your Consultation with Example Site on Tue, Nov 25 at 2:00 pm. Reply STOP to stop texts." */
+function appt_sms_reminder_text(array $b): string
+{
+    $lang = (string) ($b['language'] ?: primary_lang());
+    $first = explode(' ', trim((string) $b['name']))[0] ?: (string) $b['name'];
+    $start = appt_start($b);
+    $when = $lang === 'es' ? $start->format('D j M, H:i') : $start->format('D, M j \a\t g:i a');
+    return sprintf(t_in($lang, 'book_sms_reminder'), $first, $b['service_title'], site_name(), $when);
+}
+
+/** Text the visitor through lib/features/sms.php; the outcome is kept with the booking, never shown as a crash. */
+function appt_sms_send(array $b, string $text): array
+{
+    $to = function_exists('sms_number') ? sms_number((string) ($b['phone'] ?? '')) : null;
+    if ($to === null) {
+        return ['ok' => false, 'error' => 'The phone number cannot receive texts.'];
+    }
+    $r = sms_send($to, $text);
+    if (empty($r['ok'])) {
+        error_log('Appointments: text to ' . $to . ' failed: ' . (string) ($r['error'] ?? ''));
+    }
+    return $r;
+}
 
 function appt_admin(): void
 {

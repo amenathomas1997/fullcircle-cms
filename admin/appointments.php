@@ -81,7 +81,14 @@ function appt_bookings_list(): never
     }
     $row = function (array $b): string {
         $who = h($b['name']) . '<br><a href="mailto:' . h($b['email']) . '">' . h($b['email']) . '</a>' . (($b['phone'] ?? '') !== '' ? '<br>' . h((string) $b['phone']) : '');
-        $state = ($b['status'] ?? '') === 'cancelled' ? 'Cancelled' . (($b['cancelled_by'] ?? '') === 'visitor' ? ' by them' : '') : 'Booked';
+        $state = ($b['status'] ?? '') === 'cancelled'
+            ? (($b['cancelled_by'] ?? '') === 'moved' ? 'Moved to a new time by them' : 'Cancelled' . (($b['cancelled_by'] ?? '') === 'visitor' ? ' by them' : ''))
+            : 'Booked' . (!empty($b['moved_from']['start']) ? ', moved from ' . h(appt_start(['start' => $b['moved_from']['start']])->format('D, M j g:i a')) : '');
+        if (!empty($b['sms_opt_in'])) {
+            $texts = (array) ($b['sms'] ?? []);
+            $sms = $texts ? end($texts) : null;
+            $state .= '<br>Text reminder: ' . ($sms === null ? 'asked for' : (!empty($sms['ok']) ? 'sent' : 'could not be sent: ' . h((string) ($sms['error'] ?? ''))));
+        }
         $calendar = match ((string) ($b['calendar']['type'] ?? 'none')) {
             'none' => 'Not in a calendar',
             default => (($b['calendar']['link'] ?? '') !== '' ? '<a href="' . h((string) $b['calendar']['link']) . '">In the calendar</a>' : 'In the calendar'),
@@ -177,11 +184,16 @@ function appt_service_form(?array $values = null, array $errors = [], ?string $o
     }
     $v = $values ?? ($existing ?? ['title' => '', 'slug' => '', 'duration' => '30', 'price' => '', 'location' => '', 'description' => '', 'status' => 'published']);
     $isNew = $existing === null;
+    $site = appt_settings();
     $body = appt_tabs('services') . '<form method="post" action="' . h(admin_url('appointments', $isNew ? ['view' => 'services', 'new' => 1] : ['view' => 'services', 'slug' => $origSlug])) . '">' . csrf_field()
         . updated_field('services', $isNew ? null : $origSlug)
         . text_field('title', 'Name', (string) $v['title'], ['required' => true, 'error' => $errors['title'] ?? null, 'hint' => 'For example “30-minute distance Reiki session”.'])
         . text_field('duration', 'Length in minutes', (string) $v['duration'], ['type' => 'number', 'inputmode' => 'numeric', 'required' => true, 'error' => $errors['duration'] ?? null, 'hint' => 'Between 5 and 480. Openings are offered so the whole session fits inside your hours.'])
         . text_field('price', 'Price (optional)', (string) ($v['price'] ?? ''), ['hint' => 'Shown as written, for example “$45” or “Free”.'])
+        . text_field('buffer_before', 'Minutes kept free before each booking (optional)', (string) ($v['buffer_before'] ?? ''), ['type' => 'number', 'inputmode' => 'numeric', 'error' => $errors['buffer_before'] ?? null,
+            'hint' => 'Leave empty to use the site setting, ' . (int) $site['buffer_before'] . ' minutes (Hours and wording). 0 to 120.'])
+        . text_field('buffer_after', 'Minutes kept free after each booking (optional)', (string) ($v['buffer_after'] ?? ''), ['type' => 'number', 'inputmode' => 'numeric', 'error' => $errors['buffer_after'] ?? null,
+            'hint' => 'Leave empty to use the site setting, ' . (int) $site['buffer_after'] . ' minutes. For example 15 to leave time for notes.'])
         . text_field('location', 'Where it happens (optional)', (string) ($v['location'] ?? ''), ['hint' => 'For example “Online, from your own home” or an address. Goes into the calendar event and the confirmation email.'])
         . textarea_field('description', 'Short description (optional)', (string) ($v['description'] ?? ''), ['rows' => 4, 'hint' => 'A sentence or two shown with the service. Plain text.'])
         . radio_field('status', 'Status', ['published' => 'Bookable', 'draft' => 'Hidden, only you can see it'], (string) ($v['status'] ?? 'published'))
@@ -194,12 +206,17 @@ function appt_service_save(): never
 {
     $origSlug = isset($_GET['slug']) ? (string) $_GET['slug'] : null;
     $v = [];
-    foreach (['title', 'slug', 'duration', 'price', 'location', 'description', 'status'] as $k) {
+    foreach (['title', 'slug', 'duration', 'price', 'location', 'description', 'status', 'buffer_before', 'buffer_after'] as $k) {
         $v[$k] = trim((string) ($_POST[$k] ?? ''));
     }
     $errors = [];
     if ($v['title'] === '') {
         $errors['title'] = 'Give the service a name.';
+    }
+    foreach (['buffer_before' => 'before', 'buffer_after' => 'after'] as $k => $word) {
+        if ($v[$k] !== '' && (!ctype_digit($v[$k]) || (int) $v[$k] > 120)) {
+            $errors[$k] = "Enter the minutes kept free $word as a whole number from 0 to 120, or leave it empty.";
+        }
     }
     if (!ctype_digit($v['duration']) || (int) $v['duration'] < 5 || (int) $v['duration'] > 480) {
         $errors['duration'] = 'Enter the length as a number of minutes between 5 and 480.';
@@ -215,6 +232,13 @@ function appt_service_save(): never
     }
     $v['slug'] = $slug;
     $v['duration'] = (int) $v['duration'];
+    foreach (['buffer_before', 'buffer_after'] as $k) {
+        if ($v[$k] === '') {
+            unset($v[$k]);
+        } else {
+            $v[$k] = (int) $v[$k];
+        }
+    }
     $v['status'] = $v['status'] === 'draft' ? 'draft' : 'published';
     $v['updated'] = date('c');
     save_item('services', $slug, $v, $origSlug);
@@ -265,7 +289,8 @@ function appt_hours_form(array $errors = [], ?array $values = null): never
     }
     $body .= '<h2>How openings are offered</h2>'
         . radio_field('step', 'Start times offered', array_map(fn($l) => $l, APPT_STEPS), (string) $s['step'])
-        . text_field('buffer', 'Gap between appointments, in minutes', (string) $s['buffer'], ['type' => 'number', 'inputmode' => 'numeric', 'error' => $errors['buffer'] ?? null, 'hint' => '0 to 120. Kept free before and after every busy time and booking.'])
+        . text_field('buffer_before', 'Minutes kept free before each appointment', (string) $s['buffer_before'], ['type' => 'number', 'inputmode' => 'numeric', 'error' => $errors['buffer_before'] ?? null, 'hint' => '0 to 120. Nothing is offered that starts sooner than this after a busy time ends. A service can set its own number.'])
+        . text_field('buffer_after', 'Minutes kept free after each appointment', (string) $s['buffer_after'], ['type' => 'number', 'inputmode' => 'numeric', 'error' => $errors['buffer_after'] ?? null, 'hint' => '0 to 120. Kept free after the booking ends, before the next busy time.'])
         . text_field('notice_hours', 'Shortest notice, in hours', (string) $s['notice_hours'], ['type' => 'number', 'inputmode' => 'numeric', 'error' => $errors['notice_hours'] ?? null, 'hint' => 'For example 24: nothing sooner than a day from now is offered.'])
         . text_field('window_days', 'How far ahead people can book, in days', (string) $s['window_days'], ['type' => 'number', 'inputmode' => 'numeric', 'error' => $errors['window_days'] ?? null, 'hint' => '1 to 365.'])
         . '<h2>The booking form</h2>'
@@ -274,6 +299,9 @@ function appt_hours_form(array $errors = [], ?array $values = null): never
         . textarea_field('intro', 'Introduction at the top of /book/', $s['intro'], ['rows' => 3, 'hint' => 'Shown above the list of services when there is more than one. Plain text.'])
         . textarea_field('after', 'What happens next', $s['after'], ['rows' => 4, 'hint' => 'Shown on the confirmation page and in the confirmation email. For example how you will get in touch, or how to pay.'])
         . checkbox_field('reminders', 'Email a reminder the day before', $s['reminders'])
+        . checkbox_field('sms_reminders', 'Text a reminder the day before to visitors who tick the box when they book', $s['sms_reminders'], ['hint' => function_exists('sms_enabled') && sms_enabled()
+            ? 'Text messages are set up. The booking form offers the box when it asks for a phone number.'
+            : 'Text messages are not set up yet, so no texts go out and the box is not offered. Fill in Settings, Text messages first.'])
         . checkbox_field('invite', 'Microsoft calendars only: add the visitor as a guest, so Outlook sends them a calendar invitation too', $s['invite'])
         . '<button type="submit" class="button">Save hours and wording</button></form>';
     admin_screen('Hours and wording', $body, 'appointments', ['errors' => $errors]);
@@ -311,7 +339,8 @@ function appt_hours_save(): never
     $new = [
         'hours' => $hours,
         'step' => isset(APPT_STEPS[(int) ($_POST['step'] ?? 30)]) ? (int) $_POST['step'] : 30,
-        'buffer' => $num('buffer', 0, 120, 'the gap'),
+        'buffer_before' => $num('buffer_before', 0, 120, 'the minutes kept free before'),
+        'buffer_after' => $num('buffer_after', 0, 120, 'the minutes kept free after'),
         'notice_hours' => $num('notice_hours', 0, 720, 'the notice'),
         'window_days' => $num('window_days', 1, 365, 'the number of days'),
         'ask_phone' => !empty($_POST['ask_phone']),
@@ -319,6 +348,7 @@ function appt_hours_save(): never
         'intro' => trim(str_replace("\r\n", "\n", (string) ($_POST['intro'] ?? ''))),
         'after' => trim(str_replace("\r\n", "\n", (string) ($_POST['after'] ?? ''))),
         'reminders' => !empty($_POST['reminders']),
+        'sms_reminders' => !empty($_POST['sms_reminders']),
         'invite' => !empty($_POST['invite']),
     ];
     if ($errors) {
