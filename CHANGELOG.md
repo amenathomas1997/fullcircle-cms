@@ -2,6 +2,19 @@
 
 Every release of the kit is listed here, newest first. `php tools/update.php` prints the entries that are new since the version a site has installed.
 
+## 1.6.0 — 2026-11-18
+
+### Undo, safer sign-in, a monthly report, and more for appointments
+
+- **Previous versions with undo**: the page, post and cheat sheet edit screens end with a list of the last 10 saved versions, who saved each and when, each with a "Put this version back" button. Putting a version back is a new save, so the version it replaced stays in the list and the step can be undone the same way. The title and content come back; the address, status and other settings stay as they are.
+- **Pending edits and review links for pages**: "Save as a pending edit" keeps a change off the website until it is published. A notice at the top of the page form offers to edit, publish or discard it, and a review link can show the pending edit, so a client can send the owner a preview before anything goes live.
+- **Two-step sign-in by email**: on a browser an account has not used before, a six-digit code is emailed after the password; it works for 10 minutes and the browser is then remembered for 30 days. On by default, with a switch under Settings (which cannot be turned on until the site can send email) and an owner-only "Forget all remembered browsers" button. Codes are limited to 3 per account in 15 minutes and 5 tries each. Accounts with an authenticator app are not asked twice.
+- **Monthly report**: on the 1st of each month the owner gets one email about last month: visitors (or "not counted"), appointments made and cancelled, form answers, contact messages and any unsent, uptime of the sites this one watches, the latest backup, days left on the certificate, the kit version and what changed in the kit that month. A switch and a "Send me this month's report now" button under Settings.
+- **Appointments**: minutes kept free before and after each booking, per service with a site default (the old single gap setting carries over to both). Visitors can change the time of a booking from their confirmation email or page: the old booking is released only once the new time is confirmed, the calendar event is moved (old deleted, new made), and the visitor and owner each get one email. A text message reminder the day before, through Twilio (Settings, Text messages), for visitors who tick the box when booking; off until the three Twilio values are filled in.
+- `tools/calendar-roundtrip.php` makes, reads back, busy-checks and deletes one event in the connected calendar, for whichever kind is connected; its header lists the Google service account steps.
+- A LICENSE file (MIT, Full Circle AT). The self-test covers page history, the sign-in code lifecycle, the report builder for a fixed month, the uptime tally and the reschedule flow against the stand-in calendars; the mail transport and texting service can be stood in for.
+- Migration 002 makes the pending-edits folder and splits the old appointment gap into before and after.
+
 ## 1.5.2 — 2026-11-18
 Microsoft calendar test works for Outlook.com accounts
 

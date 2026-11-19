@@ -1,8 +1,9 @@
 <?php
 /**
  * Checks the kit can run, from the command line or in CI:
- *   php tools/selftest.php                       syntax of every PHP file, the bootstrap, the registry and the
- *                                                appointment engine, all without a web server
+ *   php tools/selftest.php                       syntax of every PHP file, the bootstrap, the registry, the
+ *                                                appointment engine and calendars (against stand-ins), page history,
+ *                                                sign-in codes, the monthly report and the alert logic, all without a web server
  *   php tools/selftest.php --site http://localhost:8000 [--email owner@example.com --password ...]
  *                                                also crawls a running site: public pages, and with the sign-in
  *                                                details every control panel screen, looking for PHP errors
@@ -78,6 +79,14 @@ $missing = array_diff(array_keys($used), array_keys($en));
 $check('every t() key has English text', !$missing, implode(', ', array_slice($missing, 0, 8)));
 
 /* ---------- 4. The appointment engine ---------- */
+$try = function (callable $f, string &$why) {
+    try {
+        return $f();
+    } catch (Throwable $e) {
+        $why = $e->getMessage();
+        return null;
+    }
+};
 $zone = appt_zone();
 $svc = ['slug' => 'test', 'title' => 'Test', 'duration' => 45, 'status' => 'published'];
 $settingsBefore = settings();
@@ -105,6 +114,27 @@ try {
     }
 }
 $check('openings skip busy times and the end of the day', $engineOk, $detail);
+
+// Minutes kept free before and after: a service's own numbers win over the site's.
+$swapSettings = function (array $appt, callable $f) use ($settingsBefore) {
+    $file = CONTENT_DIR . '/settings.json';
+    $orig = is_file($file) ? (string) file_get_contents($file) : null;
+    try {
+        write_json($file, ['appointments' => $appt] + $settingsBefore);
+        settings(true);
+        return $f();
+    } finally {
+        $orig === null ? @unlink($file) : file_put_contents($file, $orig);
+        settings(true);
+    }
+};
+$why = '';
+$open = $try(fn() => $swapSettings(['hours' => ['tue' => [['09:00', '17:00']]], 'step' => 30, 'buffer_before' => 0, 'buffer_after' => 0, 'notice_hours' => 0, 'window_days' => 60],
+    fn() => array_map(fn($d) => $d->format('H:i'), appt_openings($svc + ['buffer_before' => 15, 'buffer_after' => 15], $day, $busy))), $why);
+$check('openings keep the service’s own minutes free before and after a busy time', $open === ['09:00', '11:30', '12:00', '12:30', '13:00', '13:30', '14:00', '14:30', '15:00', '15:30', '16:00'], $why ?: implode(' ', (array) $open));
+$open = $try(fn() => $swapSettings(['hours' => ['tue' => [['09:00', '17:00']]], 'step' => 30, 'buffer' => 30, 'notice_hours' => 0, 'window_days' => 60],
+    fn() => array_map(fn($d) => $d->format('H:i'), appt_openings($svc, $day, $busy))), $why);
+$check('an older site’s single gap setting still applies on both sides', $open === ['11:30', '12:00', '12:30', '13:00', '13:30', '14:00', '14:30', '15:00', '15:30', '16:00'], $why ?: implode(' ', (array) $open));
 
 $ics = "BEGIN:VCALENDAR\r\nBEGIN:VEVENT\r\nUID:a\r\nDTSTART;TZID=America/Chicago:20261124T090000\r\nDTEND;TZID=America/Chicago:20261124T100000\r\nRRULE:FREQ=WEEKLY;BYDAY=MO,TU;COUNT=6\r\nEXDATE;TZID=America/Chicago:20261201T090000\r\nEND:VEVENT\r\n"
     . "BEGIN:VEVENT\r\nUID:b\r\nDTSTART;VALUE=DATE:20261126\r\nTRANSP:TRANSPARENT\r\nEND:VEVENT\r\nBEGIN:VEVENT\r\nUID:c\r\nDTSTART:20261127T150000Z\r\nDURATION:PT30M\r\nEND:VEVENT\r\nEND:VCALENDAR\r\n";
@@ -144,14 +174,6 @@ $GLOBALS['appt_http_mock'] = function (string $method, string $url, array $heade
     return [599, 'no stand-in answer for ' . $method . ' ' . $url, []];
 };
 $json = fn(int $status, array $data, array $headers = []) => [$status, (string) json_encode($data), $headers];
-$try = function (callable $f, string &$why) {
-    try {
-        return $f();
-    } catch (Throwable $e) {
-        $why = $e->getMessage();
-        return null;
-    }
-};
 $win = new DateTimeImmutable('2026-12-01 00:00', $zone);
 $booking = ['id' => '20261203-100000-abc123', 'uid' => '20261203-100000-abc123@example.com', 'start' => '2026-12-03T10:00:00-06:00', 'end' => '2026-12-03T10:45:00-06:00',
     'service_title' => 'Consultation', 'duration' => 45, 'name' => 'Pat Example', 'email' => 'pat@example.com', 'phone' => '', 'notes' => 'first visit', 'location' => 'Room 2', 'status' => 'booked', 'language' => 'en'];
@@ -202,6 +224,70 @@ $queue = [['#token#', $json(400, ['error' => 'invalid_grant', 'error_description
 $why = '';
 $try(fn() => appt_ms_busy($ms, $win, $win->modify('+1 day')), $why);
 $check('Microsoft: an expired connection is reported in plain words', str_contains($why, 'would not renew') && str_contains($why, 'Connect the calendar again'), $why);
+
+unset($GLOBALS['appt_mock_tokens']);
+
+// Changing the time of a booking, end to end against the Microsoft stand-in: the busy check leaves the old booking's own event out,
+// the new event is made before the old one is deleted, both records are marked, and the visitor and owner each get one "moved" email.
+$moveDay = (new DateTimeImmutable('next tuesday', $zone))->setTime(0, 0);
+$oldId = $moveDay->format('Ymd') . '-000000-5e1f7e';
+$old = ['id' => $oldId, 'uid' => $oldId . '@example.com', 'created' => date('c'), 'status' => 'booked', 'service' => 'selftest-service', 'service_title' => 'Consultation', 'duration' => 45, 'price' => '', 'location' => '',
+    'start' => $moveDay->setTime(10, 0)->format('c'), 'end' => $moveDay->setTime(10, 45)->format('c'), 'name' => 'Pat Example', 'email' => 'pat@example.com', 'phone' => '515-555-0100', 'notes' => '', 'sms_opt_in' => true,
+    'language' => 'en', 'calendar' => ['type' => 'microsoft', 'event_id' => 'OLD1'], 'emails' => []];
+$utcOf = fn(DateTimeImmutable $d) => $d->setTimezone(new DateTimeZone('UTC'))->format('Y-m-d\TH:i:s') . '.0000000';
+$queue = [
+    ['#^POST https://login\.microsoftonline\.com/consumers/oauth2/v2\.0/token$#', $json(200, ['access_token' => 'at-3', 'expires_in' => 3599])],
+    ['#calendarView#', $json(200, ['value' => [['start' => ['dateTime' => $utcOf($moveDay->setTime(10, 0)), 'timeZone' => 'UTC'], 'end' => ['dateTime' => $utcOf($moveDay->setTime(10, 45)), 'timeZone' => 'UTC'], 'showAs' => 'busy']]])],
+    ['#^POST https://graph\.microsoft\.com/v1\.0/me/calendars/CAL1/events$#', $json(201, ['id' => 'NEW1', 'webLink' => 'https://outlook.live.com/calendar/item/NEW1'])],
+    ['#^DELETE https://graph\.microsoft\.com/v1\.0/me/events/OLD1$#', [204, '', []]],
+];
+$log = [];
+$mails = [];
+$GLOBALS['mail_mock'] = function (array $to, string $subject, string $html) use (&$mails): void {
+    $mails[] = ['to' => $to, 'subject' => $subject, 'html' => $html];
+};
+$GLOBALS['appt_calendar_mock'] = $ms;
+$why = '';
+$new = null;
+$oldAfter = null;
+try {
+    if (!is_dir(APPT_DIR)) {
+        mkdir(APPT_DIR, 0700, true);
+    }
+    appt_save_booking($old);
+    $new = $try(fn() => $swapSettings(['hours' => ['tue' => [['09:00', '17:00']]], 'step' => 30, 'buffer' => 0, 'notice_hours' => 0, 'window_days' => 60, 'invite' => false],
+        fn() => appt_move($old, $moveDay->setTime(10, 30))), $why);
+    $oldAfter = appt_booking($oldId);
+} finally {
+    @unlink(APPT_DIR . '/' . $oldId . '.json');
+    if ($new) {
+        @unlink(APPT_DIR . '/' . $new['id'] . '.json');
+    }
+    @unlink(APPT_BUSY_CACHE);
+    unset($GLOBALS['appt_calendar_mock'], $GLOBALS['mail_mock']);
+}
+$methods = implode(' ', array_map(fn($r) => $r['method'] . ' ' . basename((string) parse_url($r['url'], PHP_URL_PATH)), $log));
+$check('reschedule: the old booking’s own event does not block the new time that overlaps it', $new !== null && ($new['start'] ?? '') === $moveDay->setTime(10, 30)->format('c'), $why ?: $methods);
+$check('reschedule: the new event is made before the old one is deleted', count($log) === 4 && $log[2]['method'] === 'POST' && $log[3]['method'] === 'DELETE' && str_ends_with($log[3]['url'], '/OLD1'), $methods);
+$check('reschedule: both records are marked and point at each other', ($new['moved_from']['id'] ?? '') === $oldId && ($new['calendar']['event_id'] ?? '') === 'NEW1'
+    && ($oldAfter['status'] ?? '') === 'cancelled' && ($oldAfter['cancelled_by'] ?? '') === 'moved' && ($oldAfter['moved_to'] ?? '') === ($new['id'] ?? '-'), json_encode([$new['moved_from'] ?? null, $oldAfter['status'] ?? null, $oldAfter['moved_to'] ?? null]));
+$check('reschedule: one "moved" email each to the visitor and the owner, with the old time named', count($mails) === 2 && ($mails[0]['to'][0] ?? '') === 'pat@example.com' && str_contains($mails[0]['subject'], 'moved')
+    && str_contains($mails[0]['html'], 'It was on') && str_contains($mails[0]['html'], '/book/move/') && ($mails[1]['to'][0] ?? '') === 'owner' && str_contains($mails[1]['subject'], 'Moved appointment'),
+    implode(' | ', array_map(fn($m) => implode(',', $m['to']) . ': ' . $m['subject'], $mails)));
+
+// Text reminders: the day before, in the daytime, through the texting stand-in.
+$texts = [];
+$GLOBALS['sms_mock'] = function (string $to, string $body) use (&$texts): array {
+    $texts[] = [$to, $body];
+    return ['ok' => true, 'id' => 'SM1', 'status' => 'queued', 'error' => null];
+};
+$dayBefore = $moveDay->modify('-1 day');
+$check('text reminder: due the day before between 9 am and 8 pm, not at night or two days out',
+    appt_sms_reminder_due($old, $dayBefore->setTime(9, 5)) && !appt_sms_reminder_due($old, $dayBefore->setTime(7, 0)) && !appt_sms_reminder_due($old, $dayBefore->modify('-1 day')->setTime(12, 0)) && !appt_sms_reminder_due($old, $moveDay->setTime(9, 0)));
+$sent = appt_sms_send($old, appt_sms_reminder_text($old));
+$check('text reminder: first name, service, site and time, sent to the number in +1 form', !empty($sent['ok']) && ($texts[0][0] ?? '') === '+15155550100' && str_starts_with($texts[0][1] ?? '', 'Hi Pat, a reminder of your Consultation with ') && str_contains($texts[0][1] ?? '', 'Reply STOP'), json_encode($texts));
+$check('phone numbers: US forms and international ones are read, short ones refused', sms_number('(515) 555-0100') === '+15155550100' && sms_number('1 515 555 0100') === '+15155550100' && sms_number('+44 20 7946 0958') === '+442079460958' && sms_number('12345') === null);
+unset($GLOBALS['sms_mock']);
 
 unset($GLOBALS['appt_mock_tokens']);
 // Google: a signed JWT for the service account, freeBusy, an event made and removed, and a shared-calendar mistake explained.
@@ -292,6 +378,7 @@ unset($GLOBALS['appt_mock_tokens']);
 
 /* ---------- 5. Fleet alerts decide correctly ---------- */
 $t0 = 1_800_000_000;
+$settingsBefore = settings();
 $fine = fn(string $n, array $extra = []) => ['name' => $n, 'url' => "https://$n", 'ok' => true, 'error' => '', 'status' => $extra + ['ssl_days' => 60, 'last_backup' => date('c', $t0 - 3600), 'unsent_messages' => 0, 'timestamp' => date('c', $t0)]];
 $gone = fn(string $n) => ['name' => $n, 'url' => "https://$n", 'ok' => false, 'error' => 'No answer', 'status' => null];
 $st = [];
@@ -306,7 +393,115 @@ $check('fleet alerts: down after two misses, no repeats within a day, back, and 
     $kinds($a1) === '' && $kinds($a2) === '' && $kinds($a3) === 'down,ssl' && $kinds($a4) === '' && $kinds($a5) === 'back' && $kinds($a6) === 'ssl',
     implode(' / ', array_map($kinds, [$a1, $a2, $a3, $a4, $a5, $a6])));
 
-/* ---------- 6. A running site, when asked ---------- */
+/* ---------- 6. Page history: save, list, put back, undo ---------- */
+// The edit-screen section builds links and forms with two control panel helpers; stand-ins are enough here.
+if (!function_exists('admin_url')) {
+    function admin_url(string $action = '', array $params = []): string
+    {
+        return '/admin/?' . http_build_query(['a' => $action] + $params);
+    }
+    function csrf_field(): string
+    {
+        return '<input type="hidden" name="csrf" value="test">';
+    }
+}
+$slug = 'selftest-history-' . bin2hex(random_bytes(3));
+$GLOBALS['current_editor'] = 'Self-test';
+$why = '';
+$hist = $try(function () use ($slug): array {
+    try {
+        $base = ['title' => 'History one', 'slug' => $slug, 'status' => 'draft', 'hide_title' => false, 'description' => '', 'body' => '<p>one</p>'];
+        save_item('pages', $slug, $base);
+        save_item('pages', $slug, ['title' => 'History two', 'body' => '<p>two</p>'] + $base);
+        save_item('pages', $slug, ['title' => 'History three', 'body' => '<p>three</p>'] + $base);
+        $before = history_versions('pages', $slug);
+        $restored = history_restore('pages', $slug, $before[1]['id']);  // put "one" back
+        $after = history_versions('pages', $slug);
+        $same = history_versions('pages', $slug)[0]['same'] ?? null;
+        return ['before' => $before, 'restored' => $restored, 'after' => $after, 'section' => history_section('pages', $slug)];
+    } finally {
+        delete_item('pages', $slug);
+        foreach (glob(revision_dir("pages/$slug") . '/*') ?: [] as $f) {
+            @unlink($f);
+        }
+        @rmdir(revision_dir("pages/$slug"));
+    }
+}, $why);
+$check('page history: the two earlier saves are listed newest first, with who saved them', $hist && count($hist['before']) === 2 && $hist['before'][0]['title'] === 'History two' && $hist['before'][1]['title'] === 'History one' && $hist['before'][0]['saved_by'] === 'Self-test', $why);
+$check('page history: putting a version back restores its title and content and keeps the status', $hist && $hist['restored']['title'] === 'History one' && $hist['restored']['body'] === '<p>one</p>' && $hist['restored']['status'] === 'draft', $why);
+$check('page history: the replaced version joins the list, so the restore can be undone', $hist && count($hist['after']) === 3 && $hist['after'][0]['title'] === 'History three' && $hist['after'][2]['same'] === true, $why);
+$check('page history: the edit-screen section has a "Put this version back" button per version', $hist && substr_count($hist['section'], 'Put this version back') === 2 && str_contains($hist['section'], 'Same as now'), $why);
+unset($GLOBALS['current_editor']);
+
+/* ---------- 7. Two-step sign-in by emailed code: the whole lifecycle at fixed times ---------- */
+$t0 = 1_800_000_000;
+$st = ['codes' => [], 'browsers' => []];
+[$st, $code1] = signin_code_issue($st, 'u1', $t0);
+[$st, $okWrong, $whyWrong] = signin_code_check($st, 'u1', '000000', $t0 + 10);
+[$st, $okOther] = signin_code_check($st, 'u2', (string) $code1, $t0 + 10);
+[$st, $okRight] = signin_code_check($st, 'u1', ' ' . substr((string) $code1, 0, 3) . ' ' . substr((string) $code1, 3) . ' ', $t0 + 20);
+[$st, $okTwice, $whyTwice] = signin_code_check($st, 'u1', (string) $code1, $t0 + 30);
+$check('sign-in code: six digits, a wrong one is refused, another account cannot use it, spaces are ignored, and it works once',
+    is_string($code1) && preg_match('/^\d{6}$/', $code1) && !$okWrong && str_contains($whyWrong, 'not right') && !$okOther && $okRight && !$okTwice && str_contains($whyTwice, 'no code'), json_encode([$code1 !== null, $okWrong, $okOther, $okRight, $okTwice]));
+[$st, $code2] = signin_code_issue($st, 'u1', $t0 + 60);
+[$st, $okLate, $whyLate] = signin_code_check($st, 'u1', (string) $code2, $t0 + 60 + SIGNIN_CODE_LIFE + 1);
+$check('sign-in code: expires after 10 minutes', !$okLate && str_contains($whyLate, 'expired'), $whyLate);
+[$st, $code3] = signin_code_issue($st, 'u1', $t0 + 120);
+[$st, $code4, $whyMany] = signin_code_issue($st, 'u1', $t0 + 180);
+[$st, $code5] = signin_code_issue($st, 'u1', $t0 + 180 + SIGNIN_CODE_SEND_WINDOW);
+$check('sign-in code: at most 3 codes in 15 minutes, then allowed again', $code3 !== null && $code4 === null && str_contains($whyMany, 'Several codes') && $code5 !== null, $whyMany);
+for ($i = 0; $i < SIGNIN_CODE_MAX_TRIES; $i++) {
+    [$st] = signin_code_check($st, 'u1', '111111', $t0 + 200 + $i);
+}
+[$st, $okWorn, $whyWorn] = signin_code_check($st, 'u1', (string) $code5, $t0 + 210);
+$check('sign-in code: void after 5 wrong tries, even if the right one comes next', !$okWorn && str_contains($whyWorn, 'too many'), $whyWorn);
+[$st, $token] = signin_browser_remember($st, 'u1', $t0);
+$check('remembered browser: known for its account for 30 days, not for another account, not after, not with a made-up token',
+    signin_browser_known($st, $token, 'u1', $t0 + 29 * 86400) && !signin_browser_known($st, $token, 'u2', $t0 + 10) && !signin_browser_known($st, $token, 'u1', $t0 + 31 * 86400) && !signin_browser_known($st, str_repeat('a', 64), 'u1', $t0 + 10));
+$tidied = signin_browsers_tidy($st, $t0 + 31 * 86400);
+$check('remembered browser: forgotten by the tidy-up once it is past its 30 days, and the code records go with it', $tidied['browsers'] === [] && $tidied['codes'] === []);
+$mails = [];
+$GLOBALS['mail_mock'] = function (array $to, string $subject, string $html) use (&$mails): void {
+    $mails[] = ['to' => $to, 'subject' => $subject, 'html' => $html];
+};
+$stateFile = SIGNIN_STATE_FILE;
+$stateBefore = is_file($stateFile) ? (string) file_get_contents($stateFile) : null;
+try {
+    $sendWhy = signin_code_send(['id' => 'selftest-user', 'name' => 'Self Test', 'email' => 'self@example.com']);
+    $savedState = signin_state();
+} finally {
+    $stateBefore === null ? @unlink($stateFile) : file_put_contents($stateFile, $stateBefore);
+    unset($GLOBALS['mail_mock']);
+}
+preg_match('/(\d{6})/', (string) ($mails[0]['subject'] ?? ''), $mm);
+$check('sign-in code: the email goes to the account’s address with the code, and only its hash is kept', $sendWhy === '' && ($mails[0]['to'][0] ?? '') === 'self@example.com' && isset($mm[1]) && str_contains($mails[0]['html'], $mm[1])
+    && ($savedState['codes']['selftest-user']['hash'] ?? '') === signin_code_hash('selftest-user', $mm[1]) && !str_contains(json_encode($savedState), $mm[1]), $sendWhy ?: json_encode($mails[0]['subject'] ?? null));
+
+/* ---------- 8. The monthly report, for a fixed month ---------- */
+$fixed = ['month' => '2026-10', 'label' => 'October 2026', 'site' => 'Example Site', 'url' => 'https://example.com/', 'visitors' => 120, 'views' => 540, 'bookings_made' => 4, 'bookings_cancelled' => 1,
+    'form_answers' => null, 'messages' => 3, 'messages_unsent' => 1, 'uptime' => [['name' => 'Other Site', 'checks' => 4000, 'fails' => 4, 'percent' => 99.9], ['name' => 'New Site', 'checks' => 0, 'fails' => 0, 'percent' => null]],
+    'last_backup' => date('c', mktime(3, 0, 0, 10, 31, 2026)), 'ssl_days' => 9, 'version' => '1.6.0', 'changes' => ['1.6.0' => ['date' => '2026-10-20', 'text' => "### Undo and more\n\n- First bullet."]]];
+$html = monthly_report_html($fixed);
+$check('monthly report: every figure is in the email, in words a person can read', str_contains($html, '120 visitors and 540 page views') && str_contains($html, '4 appointments made and 1 cancelled')
+    && str_contains($html, 'Forms are not turned on') && str_contains($html, '3 contact messages') && str_contains($html, '1 could not be emailed') && str_contains($html, 'Other Site: 99.9% up over 4000 checks, 4 misses')
+    && str_contains($html, 'New Site: no checks recorded yet') && str_contains($html, 'Latest backup: October 31, 2026') && str_contains($html, '9 days left') && str_contains($html, 'renew it soon')
+    && str_contains($html, '1.6.0 (October 20, 2026): Undo and more'), strip_tags($html));
+$none = monthly_report_html(['visitors' => null, 'views' => null, 'bookings_made' => null, 'bookings_cancelled' => null, 'form_answers' => null, 'messages' => 0, 'messages_unsent' => 0, 'uptime' => null, 'last_backup' => null, 'ssl_days' => null, 'version' => '1.6.0', 'changes' => []] + $fixed, true);
+$check('monthly report: says "not counted" rather than inventing visitors, and "so far" for the month in progress', str_contains($none, 'Visitors were not counted') && str_contains($none, 'So far in October 2026') && str_contains($none, 'No nightly backup') && !str_contains($none, 'Sites you watch'));
+$why = '';
+$real = $try(fn() => monthly_report_data('2020-01'), $why);
+$check('monthly report: a month with no records builds without error and counts nothing', $real !== null && $real['visitors'] === null && $real['messages'] === 0 && $real['label'] === 'January 2020' && $real['changes'] === [], $why);
+$tmpLog = tempnam(sys_get_temp_dir(), 'changelog');
+file_put_contents($tmpLog, "# Changelog\n\n## 1.6.0 — 2026-11-18\nText a.\n\n## 1.5.0 — 2026-10-31\nText b.\n\n## 1.4.0 — 2026-10-02\nText c.\n");
+$changes = monthly_report_changes('2026-10', $tmpLog);
+@unlink($tmpLog);
+$check('monthly report: picks the changelog entries dated in the month', array_keys($changes) === ['1.5.0', '1.4.0'] && $changes['1.4.0']['text'] === 'Text c.', json_encode(array_keys($changes)));
+$tally = fleet_uptime_tally([], [['name' => 'A', 'url' => 'https://a.test', 'ok' => true], ['name' => 'B', 'url' => 'https://b.test', 'ok' => false]], $t0);
+$tally = fleet_uptime_tally($tally, [['name' => 'A', 'url' => 'https://a.test', 'ok' => true], ['name' => 'B', 'url' => 'https://b.test', 'ok' => true]], $t0 + 600);
+$m = date('Y-m', $t0);
+$check('uptime tally: counts checks and misses per site per month', ($tally[$m]['https://a.test']['checks'] ?? 0) === 2 && ($tally[$m]['https://a.test']['fails'] ?? 1) === 0 && ($tally[$m]['https://b.test']['fails'] ?? 0) === 1, json_encode($tally));
+
+/* ---------- 9. A running site, when asked ---------- */
 if (!empty($opts['site'])) {
     $base = rtrim((string) $opts['site'], '/');
     $jar = tempnam(sys_get_temp_dir(), 'selftest-cookies');
