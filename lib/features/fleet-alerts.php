@@ -115,6 +115,10 @@ function fleet_alerts_run(bool $force = false): array
     }
     $results = fleet_sites() ? check_fleet()['sites'] : [];
     $results[] = fleet_self_result();
+    // Each round of checks is tallied per month for the monthly report's uptime figures (lib/features/monthly-report.php).
+    if (function_exists('fleet_uptime_record')) {
+        fleet_uptime_record(array_slice($results, 0, -1));
+    }
     $state = read_json(FLEET_ALERTS) ?? [];
     [$alerts, $newState] = fleet_alert_decisions($results, $state, time());
     if ($alerts) {

@@ -50,6 +50,10 @@ function mail_configured(): bool
 /** Send an HTML email to one or more people, each seeing only their own address. */
 function send_mail_to(array $addresses, string $subject, string $html, ?string $replyToEmail = null, ?string $replyToName = null): void
 {
+    if (isset($GLOBALS['mail_mock'])) {
+        ($GLOBALS['mail_mock'])($addresses, $subject, $html); // tools/selftest.php stands in for the mail transport
+        return;
+    }
     if (!mail_ready()) {
         throw new RuntimeException('The email sending settings are not filled in yet.');
     }
@@ -71,6 +75,10 @@ function send_mail_to(array $addresses, string $subject, string $html, ?string $
 /** Send an HTML email to the site owner's addresses (Settings > Send messages to). */
 function send_mail_owner(string $subject, string $html, ?string $replyToEmail = null, ?string $replyToName = null): void
 {
+    if (isset($GLOBALS['mail_mock'])) {
+        ($GLOBALS['mail_mock'])(['owner'], $subject, $html);
+        return;
+    }
     if (!mail_configured()) {
         throw new RuntimeException('The email sending settings are not filled in yet.');
     }
