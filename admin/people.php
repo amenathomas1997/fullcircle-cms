@@ -20,6 +20,7 @@ function accounts_guest_screen(string $action, bool $post): void
         'forgot' => forgot_password_screen($post),
         'set_password' => set_password_screen($post),
         'twofactor' => two_factor_screen($post),
+        'signin_code' => function_exists('signin_code_screen') ? signin_code_screen($post) : null,
         'create_owner' => create_owner_screen($post),
         default => null,
     };
@@ -37,12 +38,16 @@ function safe_next(string $next): string
     return str_starts_with($next, ADMIN_URL) && !str_contains($next, "\n") ? $next : ADMIN_URL;
 }
 
-/** After a correct email and password: straight in, or on to the two-factor screen. */
+/** After a correct email and password: straight in, or on to the two-factor screen, or on to the emailed-code screen on a new browser. */
 function accounts_continue_sign_in(array $user, string $next): never
 {
     if (($user['totp_secret'] ?? '') !== '') {
         $_SESSION['pending_2fa'] = ['id' => $user['id'], 'at' => time(), 'next' => safe_next($next)];
         go(admin_url('twofactor'));
+    }
+    // Two-step sign-in by emailed code (lib/features/signin-codes.php).
+    if (function_exists('signin_code_needed') && signin_code_needed($user)) {
+        signin_code_begin($user, safe_next($next));
     }
     accounts_sign_in($user);
     go(safe_next($next));
