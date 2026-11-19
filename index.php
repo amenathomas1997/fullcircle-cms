@@ -274,6 +274,8 @@ function show_page(string $slug, string $path): never
     if (!$page || (!page_is_live($page) && !can_preview() && !reviewing('pages', $slug))) {
         not_found();
     }
+    // A feature may swap in other content for this request (a review link to a pending edit, lib/features/review-links.php).
+    $page = apply_filters('page_item', $page);
     $body = render_shortcodes((string) ($page['body'] ?? ''), $path);
 
     // The same page in the other language, if there is one.

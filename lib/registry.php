@@ -25,7 +25,8 @@
  *       A placeholder a site's layout template can use; filled on every page.
  *   register_filter('organization', fn (array $org): array => ...)
  *       Change a value the core builds before it is used. Names so far: 'organization' (the schema.org
- *       data on every page), 'layout_replacements' (every template placeholder), 'robots' (robots.txt text).
+ *       data on every page), 'layout_replacements' (every template placeholder), 'robots' (robots.txt text),
+ *       'page_item' (the page about to be shown, so a review link can show a pending edit).
  *
  * Everything registered is kept in $GLOBALS['registry'] and read by the core at the right moment.
  */

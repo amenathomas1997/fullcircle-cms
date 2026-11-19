@@ -37,7 +37,7 @@ $GLOBALS['current_editor'] = (string) ($_SESSION['admin_name'] ?? 'Unknown');
 // The least role each screen needs: owner > editor > author. Anything not listed is for editors and owners.
 const ACTION_ROLES = [
     '' => 'author', 'posts' => 'author', 'post' => 'author', 'media' => 'author', 'media_delete' => 'author', 'upload_image' => 'author',
-    'preview' => 'author', 'revisions' => 'author', 'delete' => 'author', 'logout' => 'author', 'account' => 'author',
+    'preview' => 'author', 'revisions' => 'author', 'history' => 'author', 'delete' => 'author', 'logout' => 'author', 'account' => 'author',
     'template' => 'owner', 'settings' => 'owner', 'backup' => 'owner', 'people' => 'owner', 'activity' => 'owner', 'translations' => 'owner',
 ];
 require_role(ACTION_ROLES[$action] ?? 'editor');
@@ -353,14 +353,21 @@ function page_form(?array $values = null, array $errors = [], ?string $origSlug 
         flash('That page could not be found. It may have been deleted.', 'error');
         go(admin_url('pages'));
     }
+    // A pending edit (lib/features/review-links.php) can be opened in the form with ?pending=1; the live page stays as it is until it is published.
+    $pending = $existing && function_exists('pending_edit_get') ? pending_edit_get('pages', (string) $origSlug) : null;
+    $editingPending = $pending !== null && (isset($_GET['pending']) || !empty($_POST['from_pending']));
+    if ($values === null && $editingPending) {
+        $values = (array) $pending['values'] + $existing;
+    }
     $v = $values ?? ($existing ?? ['title' => '', 'slug' => '', 'status' => 'published', 'hide_title' => false, 'description' => '', 'body' => '']);
     $isNew = $existing === null;
     $isHome = $origSlug === 'home';
 
     // Accessibility check (lib/features/a11y-check.php): warnings found when this page was last saved.
-    $body = (function_exists('a11y_warnings_html') ? a11y_warnings_html($existing, 'pages') : '')
+    $body = (function_exists('pending_edit_notice') ? pending_edit_notice('pages', $isNew ? null : $origSlug, $editingPending) : '')
+        . (function_exists('a11y_warnings_html') ? a11y_warnings_html($existing, 'pages') : '')
         . '<form method="post" action="' . h(admin_url('page', $isNew ? [] : ['slug' => $origSlug])) . '" data-editor-form data-editor-key="fc-editor-page" data-editor-default="html">'
-        . csrf_field() . updated_field('pages', $isNew ? null : $origSlug)
+        . csrf_field() . updated_field('pages', $isNew ? null : $origSlug) . ($editingPending ? '<input type="hidden" name="from_pending" value="1">' : '')
         . text_field('title', 'Page title', (string) $v['title'], ['required' => true, 'error' => $errors['title'] ?? null,
             'hint' => 'Shown in the browser tab and, unless you turn it off below, as the main heading of the page.']);
     if ($isHome) {
@@ -391,8 +398,9 @@ function page_form(?array $values = null, array $errors = [], ?string $origSlug 
     $body .= '<div class="form-actions">'
         . '<button type="submit" class="button" name="then" value="edit">Save page</button>'
         . '<button type="submit" class="button button-secondary" name="then" value="view">Save and view page</button>'
+        . ($isNew || !function_exists('pending_edit_save') ? '' : '<button type="submit" class="button button-secondary" name="then" value="pending">Save as a pending edit<span class="visually-hidden"> (not live until it is published)</span></button>')
         . '<button type="submit" class="button button-secondary" formaction="' . h(admin_url('preview', ['type' => 'pages'])) . '" formtarget="_blank">Preview without saving<span class="visually-hidden"> (opens in a new tab)</span></button>'
-        . '</div><p class="hint">Keyboard shortcut: press Command and S (or Control and S) to save.</p></form>';
+        . '</div><p class="hint">Keyboard shortcut: press Command and S (or Control and S) to save.' . ($isNew ? '' : ' “Save as a pending edit” keeps your change off the website until someone publishes it; you can make a review link to it below.') . '</p></form>';
 
     if (!$isNew) {
         $body .= '<h2>More options</h2><ul>'
@@ -401,7 +409,9 @@ function page_form(?array $values = null, array $errors = [], ?string $origSlug 
         if (!$isHome) {
             $body .= '<li><a href="' . h(admin_url('delete', ['type' => 'pages', 'slug' => $origSlug])) . '">Delete this page</a></li>';
         }
-        $body .= '</ul>' . (function_exists('review_links_section') ? review_links_section('pages', $origSlug) : '');
+        // Previous versions with undo (lib/features/page-history.php) and review links (lib/features/review-links.php).
+        $body .= '</ul>' . (function_exists('history_section') ? history_section('pages', $origSlug) : '')
+            . (function_exists('review_links_section') ? review_links_section('pages', $origSlug) : '');
     }
     admin_screen($isNew ? 'Add a page' : 'Edit page: ' . h($existing['title']), $body, 'pages', ['errors' => $errors, 'scripts' => editor_scripts()]);
 }
@@ -462,6 +472,13 @@ function page_save(): never
     if ($errors) {
         page_form($v, $errors, $existing ? $origSlug : null);
     }
+    if (($_POST['then'] ?? '') === 'pending' && $existing && function_exists('pending_edit_save')) {
+        // Kept aside, not live: the form values as typed, so publishing them later goes through this same check.
+        pending_edit_save('pages', $origSlug, $v, (string) ($GLOBALS['current_editor'] ?? ''));
+        activity_log('saved a pending edit of a page', "“{$v['title']}” (pages/$origSlug)");
+        flash('Saved a pending edit of “' . $v['title'] . '”. The website still shows the page as it was. Make a review link to the pending edit under Review links, and publish it from the notice at the top when it is ready.');
+        go(admin_url('page', ['slug' => $origSlug, 'pending' => 1]));
+    }
 
     $addToMenu = $v['add_to_menu'];
     unset($v['add_to_menu']);
@@ -483,6 +500,9 @@ function page_save(): never
         $v['imported_from'] = $existing['imported_from'];
     }
     save_item('pages', $v['slug'], $v, $existing ? $origSlug : null);
+    if ($existing && !empty($_POST['from_pending']) && function_exists('pending_edit_delete')) {
+        pending_edit_delete('pages', $origSlug); // the pending edit is now the live page
+    }
     link_translation($v['slug'], $v['translation'] ?? '', $existing ? $origSlug : null);
     // Children follow a renamed page, and menu links follow every address that changed (the page's or its children's).
     nested_page_saved($existing ? $origSlug : null, $v['slug'], $oldPaths);
@@ -616,6 +636,7 @@ function post_form(?array $values = null, array $errors = [], ?string $origSlug 
             . '<li><a href="/blog/' . h($origSlug) . '/">View this post on the website</a></li>'
             . '<li><a href="' . h(admin_url('revisions', ['key' => "posts/$origSlug"])) . '">Earlier versions of this post</a> (' . count(list_revisions("posts/$origSlug")) . ')</li>'
             . '<li><a href="' . h(admin_url('delete', ['type' => 'posts', 'slug' => $origSlug])) . '">Delete this post</a></li></ul>'
+            . (function_exists('history_section') ? history_section('posts', $origSlug) : '')
             . (function_exists('review_links_section') ? review_links_section('posts', $origSlug) : '');
     }
 
