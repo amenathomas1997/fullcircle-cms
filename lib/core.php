@@ -245,7 +245,11 @@ function revision_dir(string $key): string
 function save_revision(string $type, string $slug, string $contents): void
 {
     $dir = revision_dir("$type/$slug");
-    $name = date('Y-m-d_His') . '-' . bin2hex(random_bytes(2)) . '.rev';
+    // The second, then a four-hex-digit counter from the microseconds, so two saves in the same second still list in order.
+    $n = intdiv((int) ((microtime(true) - floor(microtime(true))) * 1000000), 16);
+    do {
+        $name = date('Y-m-d_His') . '-' . sprintf('%04x', $n++ % 65536) . '.rev';
+    } while (is_file("$dir/$name"));
     write_file("$dir/$name", $contents);
     $all = list_revisions("$type/$slug");
     foreach (array_slice($all, MAX_REVISIONS) as $old) {

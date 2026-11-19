@@ -63,7 +63,8 @@ function resource_form(?array $values = null, array $errors = [], ?string $origS
             . '<li><a href="/resources/' . h($origSlug) . '.docx">Download the Word version</a></li>'
             . '<li><a href="/resources/' . h($origSlug) . '.brf">Download the braille version</a></li>'
             . '<li><a href="' . h(admin_url('revisions', ['key' => "resources/$origSlug"])) . '">Earlier versions</a> (' . count(list_revisions("resources/$origSlug")) . ')</li>'
-            . '<li><a href="' . h(admin_url('delete', ['type' => 'resources', 'slug' => $origSlug])) . '">Delete this cheat sheet</a></li></ul>';
+            . '<li><a href="' . h(admin_url('delete', ['type' => 'resources', 'slug' => $origSlug])) . '">Delete this cheat sheet</a></li></ul>'
+            . (function_exists('history_section') ? history_section('resources', $origSlug) : '');
     }
     admin_screen($isNew ? 'Add a cheat sheet' : 'Edit cheat sheet: ' . h($existing['title']), $body, 'resources', [
         'errors' => $errors,
