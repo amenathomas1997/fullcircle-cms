@@ -2,6 +2,9 @@
 
 Every release of the kit is listed here, newest first. `php tools/update.php` prints the entries that are new since the version a site has installed.
 
+## 1.6.1 — 2026-11-18
+`tools/update.php --migrate` runs only the migrations not yet run, with no git involved, for a site whose code arrives by rsync from a deploy pipeline. Until now such a site never ran its migrations.
+
 ## 1.6.0 — 2026-11-18
 
 ### Undo, safer sign-in, a monthly report, and more for appointments

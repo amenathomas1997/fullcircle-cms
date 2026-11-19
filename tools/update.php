@@ -8,6 +8,9 @@
  *                                  the same, then run tools/selftest.php; if it fails, put the code back
  *                                  exactly as it was (git reset to the previous commit) and exit with 2.
  *                                  Finished migrations are not undone; every migration is safe to run twice.
+ *   php tools/update.php --migrate
+ *                                  run only the migrations not yet run, with no git at all: for a site
+ *                                  whose code arrives another way (rsync from a deploy pipeline).
  * The site must be a git checkout whose "origin" is the kit repository (see README: create sites
  * with git clone, not by copying). Migrations are tools/migrations/NNN-name.php; each is run once
  * and noted in data/migrations.json. Every migration must be safe to run twice.
@@ -23,6 +26,26 @@ require __DIR__ . '/../lib/bootstrap.php';
 
 $apply = in_array('--apply', $argv, true);
 $verify = in_array('--verify', $argv, true);
+if (in_array('--migrate', $argv, true)) {
+    echo 'Full Circle CMS ' . cms_version() . ' in ' . realpath(ROOT) . "\n";
+    $pending = pending_migrations();
+    if (!$pending) {
+        echo "No migrations waiting to run.\n";
+        exit(0);
+    }
+    foreach ($pending as $file) {
+        echo 'Running migration ' . basename($file) . "...\n";
+        try {
+            require $file;
+            record_migration(basename($file));
+            echo "  Done.\n";
+        } catch (Throwable $e) {
+            fwrite(STDERR, '  Failed: ' . $e->getMessage() . "\nFix the cause and run php tools/update.php --migrate again; finished migrations are not repeated.\n");
+            exit(1);
+        }
+    }
+    exit(0);
+}
 $ref = update_ref();
 [$remote] = explode('/', $ref, 2) + [''];
 $before = cms_version();
