@@ -174,7 +174,8 @@ $GLOBALS['appt_http_mock'] = function (string $method, string $url, array $heade
     return [599, 'no stand-in answer for ' . $method . ' ' . $url, []];
 };
 $json = fn(int $status, array $data, array $headers = []) => [$status, (string) json_encode($data), $headers];
-$win = new DateTimeImmutable('2026-12-01 00:00', $zone);
+// The expected request windows below are written for Central Time, so the zone is fixed here rather than read from the site's settings (a bare checkout has none).
+$win = new DateTimeImmutable('2026-12-01 00:00', new DateTimeZone('America/Chicago'));
 $booking = ['id' => '20261203-100000-abc123', 'uid' => '20261203-100000-abc123@example.com', 'start' => '2026-12-03T10:00:00-06:00', 'end' => '2026-12-03T10:45:00-06:00',
     'service_title' => 'Consultation', 'duration' => 45, 'name' => 'Pat Example', 'email' => 'pat@example.com', 'phone' => '', 'notes' => 'first visit', 'location' => 'Room 2', 'status' => 'booked', 'language' => 'en'];
 
