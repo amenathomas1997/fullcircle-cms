@@ -92,7 +92,8 @@ $kept = [];
 if ($log !== '') {
     // The template and stylesheet are tracked by git but edited in the control panel, so the site's own
     // versions are set aside for the pull and put back after it: what the owner wrote always wins.
-    $owned = ['content/layout.html', 'assets/css/site.css'];
+    // .htaccess is there too: cPanel appends its PHP handler block to it, and that must stay.
+    $owned = ['content/layout.html', 'assets/css/site.css', '.htaccess'];
     // Each porcelain line is two status letters, a space and the path; the leading space matters.
     $dirty = array_filter(explode("\n", rtrim((string) git_run(['status', '--porcelain', '--untracked-files=no']), "\n")), 'strlen');
     foreach ($dirty as $line) {

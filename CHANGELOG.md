@@ -2,6 +2,9 @@
 
 Every release of the kit is listed here, newest first. `php tools/update.php` prints the entries that are new since the version a site has installed.
 
+## 1.7.1 — 2026-11-19
+The update tool keeps a site's own `.htaccess` the way it keeps its layout and stylesheet, because cPanel appends a PHP handler block to it; until now that block stopped the update with "local changes to the kit's files".
+
 ## 1.7.0 — 2026-11-19
 
 ### Forms: attached files, fields that appear on an answer, signatures, and saving to finish later
