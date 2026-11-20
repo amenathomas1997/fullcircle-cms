@@ -2,6 +2,16 @@
 
 Every release of the kit is listed here, newest first. `php tools/update.php` prints the entries that are new since the version a site has installed.
 
+## 1.7.0 — 2026-11-19
+
+### Forms: attached files, fields that appear on an answer, signatures, and saving to finish later
+
+- **File upload field**: a form can ask for a photo, PDF, Word or Excel document or plain text file, up to 10 MB (or less if the server allows less). Files are checked by their contents, not just their name, and kept beside the submission under `data/`, where nothing is served; Submissions has a Download link, the email names the file, and deleting a submission removes its files.
+- **Show a field only when…**: any field can depend on an earlier choice list, checkboxes or yes/no field having a particular answer. The field appears and disappears as the person answers (with the site script) and is skipped by the server when it is not shown, so it is never required by mistake. Conditions follow their field when fields are moved and clear when it is removed.
+- **Signature field**: the person types their full name and ticks a box agreeing that this is their signature, which is what the submission records, with the time. A drawing box is also offered to mouse, finger and stylus users; it is optional, and the drawing is kept as a PNG beside the submission.
+- **Save and finish later**: a per-form switch adds a second button. What was typed so far is kept for 30 days under a private link, shown on the page and emailed when the form asks for an email address; coming back by the link puts the answers back, and sending the form removes the saved copy. Expired copies are tidied daily.
+- The self-test drives all four: conditions, file checks (a file whose contents do not match its name is refused), signatures, drafts and the condition remapping.
+
 ## 1.6.1 — 2026-11-18
 `tools/update.php --migrate` runs only the migrations not yet run, with no git involved, for a site whose code arrives by rsync from a deploy pipeline. Until now such a site never ran its migrations.
 

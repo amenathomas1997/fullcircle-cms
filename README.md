@@ -21,7 +21,7 @@ Optional, each with a switch in Settings, then Features:
 - Cheat sheets (on by default): reference sheets at `/resources/`, each downloadable as Word, large-print Word and a braille-ready file, with a practice quiz. Shortcode `[cheat-sheets]`.
 - Testimonials (on by default): visitors send one with `[testimonial-form]`; you approve it; `[testimonials]` shows the approved ones.
 - Email updates (on by default): sign-up with `[subscribe-form]`, double opt-in, updates sent in the background, an archive at `/updates/archive/`.
-- Forms (on by default): the owner builds forms in the control panel; each gets a shortcode `[form name]`; answers are kept under Submissions, emailed, and downloadable as CSV.
+- Forms (on by default): the owner builds forms in the control panel from thirteen field types, including file upload and signature; a field can appear only after a particular earlier answer; a form can let people save a half-finished copy and come back by a private link; each form gets a shortcode `[form name]`; answers are kept under Submissions with any attached files, emailed, and downloadable as CSV.
 - Events (off): an events page at `/events/`, one page per event with an "Add to my calendar" file, a calendar feed at `/events/feed.ics`, shortcodes `[upcoming-events]` and `[events-list]`.
 - Payments (off): card payments on a Stripe-hosted page; products under Products, each with a shortcode `[pay address]`, orders under Orders. Needs a Stripe account.
 - Videos (off): a videos page at `/videos/` with transcripts.

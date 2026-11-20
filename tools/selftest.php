@@ -501,6 +501,93 @@ $tally = fleet_uptime_tally($tally, [['name' => 'A', 'url' => 'https://a.test', 
 $m = date('Y-m', $t0);
 $check('uptime tally: counts checks and misses per site per month', ($tally[$m]['https://a.test']['checks'] ?? 0) === 2 && ($tally[$m]['https://a.test']['fails'] ?? 1) === 0 && ($tally[$m]['https://b.test']['fails'] ?? 0) === 1, json_encode($tally));
 
+/* ---------- 8b. Custom forms: conditions, attached files, signatures, save and come back ---------- */
+$slugT = 'selftest-form';
+$formT = ['slug' => $slugT, 'title' => 'Self-test form', 'resume' => true, 'fields' => [
+    ['label' => 'Your name', 'type' => 'text', 'required' => true],
+    ['label' => 'Email address', 'type' => 'email', 'required' => true],
+    ['label' => 'How did you hear about us?', 'type' => 'select', 'required' => true, 'options' => "A friend\nOnline\nOther"],
+    ['label' => 'Please say where', 'type' => 'text', 'required' => true, 'show_if' => '2', 'show_if_value' => 'Other'],
+    ['label' => 'Send a referral letter', 'type' => 'checkbox'],
+    ['label' => 'Referral letter', 'type' => 'file', 'required' => true, 'show_if' => '4', 'show_if_value' => 'yes'],
+    ['label' => 'Signature', 'type' => 'signature', 'required' => true],
+]];
+$fieldsT = array_map('form_field_defaults', $formT['fields']);
+$check('forms: a field that depends on another is hidden until that answer is given', !form_field_shown($fieldsT[3], $formT['fields'], [2 => 'Online']) && form_field_shown($fieldsT[3], $formT['fields'], [2 => 'Other']));
+$check('forms: a yes/no condition reads yes as ticked and no as not ticked', form_condition_met('checkbox', '1', 'yes') && form_condition_met('checkbox', '', 'no') && !form_condition_met('checkbox', '', 'yes'));
+$check('forms: a checkboxes condition matches any ticked box, ignoring case', form_condition_met('checkboxes', ['Mornings', 'Evenings'], 'evenings') && !form_condition_met('checkboxes', ['Mornings'], 'Evenings'));
+
+$sigPng = function_exists('imagecreatetruecolor') ? (function (): string {
+    $im = imagecreatetruecolor(300, 100);
+    $white = imagecolorallocate($im, 255, 255, 255);
+    imagefill($im, 0, 0, $white);
+    imageline($im, 10, 80, 290, 20, imagecolorallocate($im, 0, 0, 0));
+    ob_start();
+    imagepng($im);
+    return (string) ob_get_clean();
+})() : '';
+$posted = [0 => 'Pat Example', 1 => 'pat@example.com', 2 => 'Online', 3 => 'should be ignored', 4 => '', 6 => ['name' => 'Pat Example', 'agree' => '1', 'drawn' => $sigPng !== '' ? 'data:image/png;base64,' . base64_encode($sigPng) : '']];
+$got = form_collect_answers($formT, $posted, []);
+$labels = array_column($got['answers'], 'label');
+$check('forms: hidden fields are neither checked nor recorded (the "where" and the letter are skipped)', !$got['errors'] && $labels === ['Your name', 'Email address', 'How did you hear about us?', 'Send a referral letter', 'Signature'], json_encode($got['errors']) . ' ' . json_encode($labels));
+$sigAnswer = end($got['answers']);
+$check('forms: a signature records the typed name, the time, and the drawing when one is sent', is_array($sigAnswer['value']) && $sigAnswer['value']['name'] === 'Pat Example' && $sigAnswer['value']['signed'] !== '' && ($sigPng === '' || ($got['signatures'][6] ?? null) === $sigPng));
+
+$got = form_collect_answers($formT, [0 => 'Pat', 1 => 'pat@example.com', 2 => 'Other', 3 => '', 4 => '1', 6 => ['name' => 'Pat', 'agree' => '']], []);
+$check('forms: once shown, a dependent field is required, a required file is asked for, and an unticked signature box is refused',
+    isset($got['errors'][3]) && isset($got['errors'][5]) && isset($got['errors'][6]) && str_contains($got['errors'][6], 'Tick the box'), json_encode($got['errors']));
+
+$tmpFile = tempnam(sys_get_temp_dir(), 'fcf');
+file_put_contents($tmpFile, "Dear team,\nPlease see the referral.\n");
+$fileEntry = ['name' => 'Referral: letter?.txt', 'type' => 'text/plain', 'tmp_name' => $tmpFile, 'error' => UPLOAD_ERR_OK, 'size' => filesize($tmpFile)];
+$got = form_collect_answers($formT, [0 => 'Pat', 1 => 'pat@example.com', 2 => 'Online', 4 => '1', 6 => ['name' => 'Pat', 'agree' => '1', 'drawn' => '']], [5 => $fileEntry]);
+$check('forms: a plain text file is accepted and its name cleaned', !$got['errors'] && ($got['uploads'][5]['name'] ?? '') === 'Referral letter .txt', json_encode($got['errors']) . ' ' . json_encode($got['uploads'][5] ?? null));
+$exe = tempnam(sys_get_temp_dir(), 'fcx');
+file_put_contents($exe, "MZ\x90\x00binary");
+$got = form_collect_answers($formT, [0 => 'Pat', 1 => 'pat@example.com', 2 => 'Online', 4 => '1', 6 => ['name' => 'Pat', 'agree' => '1', 'drawn' => '']], [5 => ['name' => 'virus.pdf', 'type' => 'application/pdf', 'tmp_name' => $exe, 'error' => UPLOAD_ERR_OK, 'size' => 20]]);
+$check('forms: a file whose contents do not match its name is refused', isset($got['errors'][5]) && str_contains($got['errors'][5], 'kind the form does not take'), json_encode($got['errors']));
+$got = form_collect_answers($formT, [0 => 'Pat', 1 => 'pat@example.com', 2 => 'Online', 4 => '1', 6 => ['name' => 'Pat', 'agree' => '1', 'drawn' => '']], [5 => ['error' => UPLOAD_ERR_INI_SIZE] + $fileEntry]);
+$check('forms: a file the server found too big is reported with the limit', isset($got['errors'][5]) && str_contains($got['errors'][5], 'too big') && preg_match('/\d+ (MB|KB)/', $got['errors'][5]), json_encode($got['errors']));
+
+// Attach and read back through the stored copy, then remove everything the test made.
+$idT = date('Y-m-d_His') . '-abc123';
+$got = form_collect_answers($formT, [0 => 'Pat', 1 => 'pat@example.com', 2 => 'Online', 4 => '1', 6 => ['name' => 'Pat', 'agree' => '1', 'drawn' => $sigPng !== '' ? 'data:image/png;base64,' . base64_encode($sigPng) : '']], [5 => $fileEntry]);
+$answersT = form_attach_files($formT, $idT, $got);
+write_json(form_submission_dir($slugT) . "/$idT.json", ['received' => date('c'), 'answers' => $answersT]);
+$fileAnswer = $answersT[4] ?? [];
+$stored = form_stored_file($slugT, $idT, 5);
+$check('forms: an attached file is kept under data/, never in uploads/, and comes back with its original name',
+    ($fileAnswer['value']['file'] ?? '') === "$idT-5.txt" && $stored !== null && str_starts_with($stored[0], DATA_DIR . '/forms/') && $stored[1] === 'Referral letter .txt' && $stored[2] === 'text/plain', json_encode($fileAnswer) . ' ' . json_encode($stored));
+$check('forms: the file answer reads well in an email or CSV', form_answer_text($fileAnswer) === 'Referral letter .txt (1 KB)', form_answer_text($fileAnswer));
+if ($sigPng !== '') {
+    $sigStored = form_stored_file($slugT, $idT, 6);
+    $check('forms: the drawn signature is kept as a PNG beside the submission', $sigStored !== null && $sigStored[2] === 'image/png' && str_starts_with((string) file_get_contents($sigStored[0]), "\x89PNG"));
+}
+$check('forms: a drawn signature that is not a PNG is refused', form_signature_png('data:image/png;base64,' . base64_encode('<svg onload=alert(1)>')) === null && form_signature_png('data:text/html;base64,PGI+') === null);
+
+$tokenT = form_draft_save($slugT, '/apply/', [0 => 'Pat', 6 => ['name' => 'Pat', 'agree' => '', 'drawn' => 'data:image/png;base64,AAAA']]);
+$draftT = form_draft_load($slugT, $tokenT);
+$check('forms: a saved half-finished form comes back by its token, without any drawing', $draftT !== null && ($draftT['values'][0] ?? '') === 'Pat' && ($draftT['values'][6]['drawn'] ?? 'x') === '' && strtotime((string) $draftT['expires']) > time() + 29 * 86400);
+$check('forms: a wrong or malformed token finds nothing', form_draft_load($slugT, str_repeat('0', 32)) === null && form_draft_load($slugT, '../x') === null);
+write_json(form_drafts_dir($slugT) . '/' . str_repeat('a', 32) . '.json', ['expires' => date('c', time() - 60), 'values' => []]);
+$tidied = forms_tidy_drafts();
+$check('forms: the daily tidy removes only expired drafts', $tidied >= 1 && form_draft_load($slugT, $tokenT) !== null && !is_file(form_drafts_dir($slugT) . '/' . str_repeat('a', 32) . '.json'), "tidied $tidied");
+form_draft_delete($slugT, $tokenT);
+$check('forms: a draft is gone once the form is sent', form_draft_load($slugT, $tokenT) === null);
+
+$moved = form_fields_remap($fieldsT, fn(int $k) => $k === 2 ? 3 : ($k === 3 ? 2 : $k));
+$removed = form_fields_remap($fieldsT, fn(int $k) => $k === 4 ? null : ($k > 4 ? $k - 1 : $k));
+$check('forms: conditions follow their field when fields move, and clear when it is removed', $moved[3]['show_if'] === '3' && $removed[5]['show_if'] === '' && $removed[3]['show_if'] === '2');
+
+foreach (array_merge(glob(form_submission_dir($slugT) . '/files/*') ?: [], glob(form_submission_dir($slugT) . '/drafts/*') ?: [], glob(form_submission_dir($slugT) . '/*.json') ?: []) as $f) {
+    @unlink($f);
+}
+@rmdir(form_submission_dir($slugT) . '/files');
+@rmdir(form_submission_dir($slugT) . '/drafts');
+@rmdir(form_submission_dir($slugT));
+@unlink($tmpFile);
+@unlink($exe);
+
 /* ---------- 9. A running site, when asked ---------- */
 if (!empty($opts['site'])) {
     $base = rtrim((string) $opts['site'], '/');

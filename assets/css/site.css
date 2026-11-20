@@ -468,3 +468,6 @@ details > :not(summary):first-of-type { margin-top: 1rem; }
 .slot-list input:checked + label { border-color: var(--purple); background: var(--pink); }
 .slot-list input:focus-visible + label { outline: 3px solid var(--focus, var(--purple)); outline-offset: 2px; }
 .book-form .field { max-width: 32rem; }
+
+/* Drawn signature box in custom forms (optional; the typed name is the signature). */
+.signature-draw canvas { display: block; width: 100%; max-width: 36rem; height: auto; border: 2px solid currentColor; border-radius: 4px; background: #fff; color: #000; touch-action: none; }
